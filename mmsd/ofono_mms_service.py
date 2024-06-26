@@ -7,10 +7,11 @@ from dbus_next import Variant, DBusError
 
 from mmsd.logging import mmsd_print
 
+from os.path import join, exists
 import asyncio
 
 class OfonoMMSServiceInterface(ServiceInterface):
-    def __init__(self, ofono_client, ofono_props, ofono_interfaces, ofono_interface_props, verbose=False):
+    def __init__(self, ofono_client, ofono_props, ofono_interfaces, ofono_interface_props, mms_dir, verbose=False):
         super().__init__('org.ofono.mms.Service')
         mmsd_print("Initializing MMS Service interface", verbose)
         self.ofono_client = ofono_client
@@ -18,16 +19,55 @@ class OfonoMMSServiceInterface(ServiceInterface):
         self.ofono_props = ofono_props
         self.ofono_interfaces = ofono_interfaces
         self.ofono_interface_props = ofono_interface_props
+        self.mms_dir = mms_dir
+        self.mms_config_file = join(self.mms_dir, 'mms')
         self.props = {
             'UseDeliveryReports': Variant('b', False),
             'AutoCreateSMIL': Variant('b', False),
             'TotalMaxAttachmentSize': Variant('i', 1100000),
             'MaxAttachments': Variant('i', 25),
-            'NotificationInds': Variant('i', 0)
+            'NotificationInds': Variant('i', 0),
+            'ForceCAres': Variant('b', True)
         }
 
     def set_props(self):
         mmsd_print("Setting properties", self.verbose)
+        self.save_settings_to_file()
+
+    def save_settings_to_file(self):
+        mmsd_print(f"Saving settings to file {self.mms_config_file}", self.verbose)
+
+        settings_section = '[Settings]\n'
+        settings_content = ''.join(f'{key}={variant.value}\n' for key, variant in self.props.items())
+
+        if exists(self.mms_config_file):
+            with open(self.mms_config_file, 'r') as f:
+                lines = f.readlines()
+        else:
+            lines = []
+
+        inside_settings = False
+        new_lines = []
+        section_replaced = False
+
+        for line in lines:
+            if line.strip() == '[Settings]':
+                inside_settings = True
+                new_lines.append(settings_section)
+                new_lines.append(settings_content)
+                section_replaced = True
+            elif line.strip().startswith('[') and inside_settings:
+                inside_settings = False
+                new_lines.append(line)
+            elif not inside_settings:
+                new_lines.append(line)
+
+        if not section_replaced:
+            new_lines.append(settings_section)
+            new_lines.append(settings_content)
+
+        with open(self.mms_config_file, 'w') as f:
+            f.writelines(new_lines)
 
     @method()
     async def GetMessages(self) -> 'a(oa{sv})':
@@ -58,6 +98,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
         mmsd_print(f"Setting property {property} to value {value}", self.verbose)
         if property in self.props:
             self.props[property] = value
+            self.save_settings_to_file()
 
     @signal()
     def MessageAdded(self, path, properties) -> 'oa{sv}':

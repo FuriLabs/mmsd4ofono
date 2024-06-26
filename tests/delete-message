@@ -1,0 +1,17 @@
+#!/usr/bin/python3
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2024 Bardia Moshiri <fakeshell@bardia.tech>
+
+import sys
+import dbus
+
+if len(sys.argv) < 2:
+    print("Usage: {} <dbus message path>".format(sys.argv[0]))
+    sys.exit(1)
+
+bus = dbus.SessionBus()
+
+message = dbus.Interface(bus.get_object('org.ofono.mms', sys.argv[1]),
+                         'org.ofono.mms.Message')
+
+message.Delete()

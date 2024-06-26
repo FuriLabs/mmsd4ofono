@@ -1,0 +1,68 @@
+#!/usr/bin/python3
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2024 Bardia Moshiri <fakeshell@bardia.tech>
+
+import sys
+import dbus
+import csv
+
+if len(sys.argv) < 4:
+    print("Usage: {}"
+          " <recipient>,..."
+          " <smil-file-path>"
+          " <<content-id>,<content-type>,<file-path>>,..."
+          .format(sys.argv[0]))
+    print("Sample(Related): {}"
+          " \"+33611111111,+33622222222\""
+          " \"smil.txt\""
+          " \"cid-1,text/plain,text.txt\""
+          " \"cid-2,image/jpeg,image.jpg\""
+          .format(sys.argv[0]))
+    print("Sample(Mixed): {}"
+          " \"+33611111111,+33622222222\""
+          " \"\""
+          " \"cid-1,text/plain,text.txt\""
+          " \"cid-2,image/jpeg,image.jpg\""
+          .format(sys.argv[0]))
+    sys.exit(1)
+
+bus = dbus.SessionBus()
+
+manager = dbus.Interface(bus.get_object('org.ofono.mms', '/org/ofono/mms'),
+                         'org.ofono.mms.Manager')
+
+services = manager.GetServices()
+path = services[0][0]
+
+service = dbus.Interface(bus.get_object('org.ofono.mms', path),
+                         'org.ofono.mms.Service')
+
+recipients = dbus.Array([], signature=dbus.Signature('s'))
+reader = csv.reader([sys.argv[1]])
+for r in reader:
+    print("Recipient list: {}".format(r))
+    for i in r:
+        recipients.append(dbus.String(i))
+
+if sys.argv[2] == "":
+    print("Send MMS as Mixed")
+    smil = ""
+else:
+    print("Send MMS as Related")
+    print("Smil path: {}".format(sys.argv[2]))
+    with open(sys.argv[2], "r") as file:
+        smil = dbus.String(file.read())
+
+attachments = dbus.Array([], signature=dbus.Signature('(sss)'))
+for a in sys.argv[3:]:
+    print("Attachment: ({})".format(a))
+    reader = csv.reader([a])
+    for r in reader:
+        attachments.append(dbus.Struct((dbus.String(r[0]),
+                                        dbus.String(r[1]),
+                                        dbus.String(r[2])
+                                        ), signature=None))
+
+path = service.SendMessage(recipients, smil, attachments)
+
+print(path)

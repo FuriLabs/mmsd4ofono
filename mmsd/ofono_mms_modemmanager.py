@@ -7,10 +7,11 @@ from dbus_next import Variant, DBusError
 
 from mmsd.logging import mmsd_print
 
+from os.path import join, exists
 import asyncio
 
 class OfonoMMSModemManagerInterface(ServiceInterface):
-    def __init__(self, ofono_client, ofono_props, ofono_interfaces, ofono_interface_props, verbose=False):
+    def __init__(self, ofono_client, ofono_props, ofono_interfaces, ofono_interface_props, mms_dir, verbose=False):
         super().__init__('org.ofono.mms.ModemManager')
         mmsd_print("Initializing MMS modem manager interface", verbose)
         self.ofono_client = ofono_client
@@ -18,6 +19,8 @@ class OfonoMMSModemManagerInterface(ServiceInterface):
         self.ofono_props = ofono_props
         self.ofono_interfaces = ofono_interfaces
         self.ofono_interface_props = ofono_interface_props
+        self.mms_dir = mms_dir
+        self.mms_config_file = join(self.mms_dir, 'mms')
         self.props = {
             'CarrierMMSC': Variant('s', 'http://mms.invalid'),
             'MMS_APN': Variant('s', 'apn.invalid'),
@@ -54,6 +57,42 @@ class OfonoMMSModemManagerInterface(ServiceInterface):
                     self.props['MMS_APN']= Variant('s', apn)
                     self.props['CarrierMMSProxy']= Variant('s', proxy)
         self.SettingsChanged(apn, mmsc, proxy)
+        self.save_settings_to_file()
+
+    def save_settings_to_file(self):
+        mmsd_print(f"Saving settings to file {self.mms_config_file}", self.verbose)
+
+        modem_manager_section = '[Modem Manager]\n'
+        modem_manager_content = ''.join(f'{key}={variant.value}\n' for key, variant in self.props.items())
+
+        if exists(self.mms_config_file):
+            with open(self.mms_config_file, 'r') as f:
+                lines = f.readlines()
+        else:
+            lines = []
+
+        inside_modem_manager = False
+        new_lines = []
+        section_replaced = False
+
+        for line in lines:
+            if line.strip() == '[Modem Manager]':
+                inside_modem_manager = True
+                new_lines.append(modem_manager_section)
+                new_lines.append(modem_manager_content)
+                section_replaced = True
+            elif line.strip().startswith('[') and inside_modem_manager:
+                inside_modem_manager = False
+                new_lines.append(line)
+            elif not inside_modem_manager:
+                new_lines.append(line)
+
+        if not section_replaced:
+            new_lines.append(modem_manager_section)
+            new_lines.append(modem_manager_content)
+
+        with open(self.mms_config_file, 'w') as f:
+            f.writelines(new_lines)
 
     @method()
     async def PushNotify(self, smswap: 'ay'):
@@ -69,10 +108,15 @@ class OfonoMMSModemManagerInterface(ServiceInterface):
         mmsd_print(f"Changing setting {setting} to {value}", self.verbose)
         if setting in self.props:
             self.props[setting] = value
+            await self.save_settings_to_file()
 
     @method()
     async def ChangeAllSettings(self, options: 'a{sv}'):
         mmsd_print(f"Changing settings {options}", self.verbose)
+        for setting, value in options.items():
+            if setting in self.props:
+                self.props[setting] = value
+        self.save_settings_to_file()
 
     @method()
     async def ProcessMessageQueue(self):

@@ -1,0 +1,24 @@
+#!/usr/bin/python3
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2024 Bardia Moshiri <fakeshell@bardia.tech>
+
+import pydbus
+import gi.repository
+from pydbus import SessionBus
+from gi.repository import GLib
+
+bus = SessionBus()
+TestServer = bus.get("org.ofono.mms", "/org/ofono/mms/modemmanager")
+
+options = GLib.Variant('a{sv}', {
+    'DeliveryReport': GLib.Variant('b', False),
+    'Subject': GLib.Variant('s', "Test Subject!"),
+})
+
+recipients = GLib.Variant('as', ["+1XXXXXXXXXX"])
+attachments = GLib.Variant('a(sss)', [
+    ("cid-1", "text/plain", "/home/furios/Test-MMS/mmsattachments/text.txt"),
+    ("cid-2", "image/jpeg", "/home/furios/Test-MMS/mmsattachments/JPG1200x1600.jpg")
+])
+
+TestServer.SendMessage(recipients, options, attachments)

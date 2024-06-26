@@ -1,0 +1,21 @@
+#!/usr/bin/python3
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2024 Bardia Moshiri <fakeshell@bardia.tech>
+
+import dbus
+
+bus = dbus.SessionBus()
+
+manager = dbus.Interface(bus.get_object('org.ofono.mms', '/org/ofono/mms'),
+                         'org.ofono.mms.Manager')
+
+services = manager.GetServices()
+
+for entry in services:
+    path = entry[0]
+    properties = entry[1]
+
+    print("[ {} ]".format(path))
+
+    for key, val in properties.items():
+        print("    {} = {}".format(key, str(val)))

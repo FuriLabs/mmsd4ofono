@@ -5,6 +5,8 @@
 import asyncio
 from os import environ
 from argparse import ArgumentParser
+from os.path import expanduser
+from os import makedirs
 
 from dbus_next.aio import MessageBus
 from dbus_next.service import ServiceInterface, method, dbus_property, signal
@@ -38,6 +40,10 @@ class OfonoMMSManagerInterface(ServiceInterface):
         self.modem_added_block = False
         self.ofono_mms_service_interface = False
         self.ofono_mms_modemmanager_interface = False
+        self.ofono_push_notification_interface = False
+        self.home = expanduser("~")
+        self.mms_dir = expanduser("~/.mms/modemmanager")
+        makedirs(self.mms_dir, exist_ok=True)
         self.loop.create_task(self.check_ofono_presence())
         self.props = {
             'services': [
@@ -53,7 +59,7 @@ class OfonoMMSManagerInterface(ServiceInterface):
             try:
                 await self.find_ofono_modems()
             except Exception as e:
-                mmsd_print(f"Failed to scan for devices: {e}", self.verbose)
+                mmsd_print(f"Failed to get services: {e}", self.verbose)
 
         self.ServiceAdded(self.props['services'][0][0], self.props['services'][0][1])
 
@@ -178,22 +184,24 @@ class OfonoMMSManagerInterface(ServiceInterface):
         self.ofono_proxy['org.ofono.Modem'].on_property_changed(self.ofono_changed)
         await self.init_ofono_interfaces()
 
-        self.ofono_mms_service_interface = OfonoMMSServiceInterface(self.ofono_client, self.ofono_props, self.ofono_interfaces, self.ofono_interface_props, self.verbose)
+        self.ofono_mms_service_interface = OfonoMMSServiceInterface(self.ofono_client, self.ofono_props, self.ofono_interfaces, self.ofono_interface_props, self.mms_dir, self.verbose)
         self.session_bus.export('/org/ofono/mms/modemmanager', self.ofono_mms_service_interface)
         self.ofono_mms_service_interface.set_props()
         self.ofono_mms_interfaces.append(self.ofono_mms_service_interface)
         self.ofono_mms_objects.append('/org/ofono/mms/modemmanager')
 
-        self.ofono_mms_modemmanager_interface = OfonoMMSModemManagerInterface(self.ofono_client, self.ofono_props, self.ofono_interfaces, self.ofono_interface_props, self.verbose)
+        self.ofono_mms_modemmanager_interface = OfonoMMSModemManagerInterface(self.ofono_client, self.ofono_props, self.ofono_interfaces, self.ofono_interface_props, self.mms_dir, self.verbose)
         self.session_bus.export('/org/ofono/mms', self.ofono_mms_modemmanager_interface)
         await self.ofono_mms_modemmanager_interface.set_props()
         self.ofono_mms_interfaces.append(self.ofono_mms_modemmanager_interface)
         self.ofono_mms_objects.append('/org/ofono/mms')
 
-        self.modem_added_block = False
+        self.ofono_push_notification_interface = OfonoPushNotification(self.system_bus, self.ofono_client, self.ofono_props, self.ofono_interfaces, self.ofono_interface_props, self.mms_dir, self.verbose)
+        await self.ofono_push_notification_interface.RegisterAgent('/mmsd')
+        self.ofono_mms_interfaces.append(self.ofono_push_notification_interface)
+        self.ofono_mms_objects.append('/mmsd')
 
-        push_agent = OfonoPushNotification(self.system_bus, self.ofono_client, self.ofono_props, self.ofono_interfaces, self.ofono_interface_props, self.verbose)
-        await push_agent.RegisterAgent('/mmsd')
+        self.modem_added_block = False
 
         if 'org.ofono.ConnectionManager' in self.ofono_interfaces:
             contexts = await self.ofono_interfaces['org.ofono.ConnectionManager'].call_get_contexts()
@@ -233,7 +241,7 @@ class OfonoMMSManagerInterface(ServiceInterface):
                     await ofono_ctx_interface.call_set_property("Active", Variant('b', True))
                     return True
         except Exception as e:
-            mmsd_print(f"Failed to activate mms context: {e}", self.verbose)
+            mmsd_print(f"Failed to activate MMS context: {e}", self.verbose)
             return False
 
     def ofono_modem_removed(self, path):
@@ -272,6 +280,8 @@ class OfonoMMSManagerInterface(ServiceInterface):
             self.ofono_mms_service_interface.ofono_changed(name, varval)
         if self.ofono_mms_modemmanager_interface:
             self.ofono_mms_modemmanager_interface.ofono_changed(name, varval)
+        if self.ofono_push_notification_interface:
+            self.ofono_push_notification_interface.ofono_changed(name, varval)
 
     def ofono_interface_changed(self, iface):
         def ch(name, varval):
@@ -281,6 +291,8 @@ class OfonoMMSManagerInterface(ServiceInterface):
                     self.ofono_mms_service_interface.ofono_interface_changed(iface)(name, varval)
                 if self.ofono_mms_modemmanager_interface:
                     self.ofono_mms_modemmanager_interface.ofono_interface_changed(iface)(name, varval)
+                if self.ofono_push_notification_interface:
+                    self.ofono_push_notification_interface.ofono_interface_changed(iface)(name, varval)
 
         return ch
 
@@ -319,6 +331,9 @@ class OfonoMMSManagerInterface(ServiceInterface):
             if self.ofono_mms_modemmanager_interface:
                 self.ofono_mms_modemmanager_interface.ofono_interface_props = self.ofono_interface_props.copy()
 
+            if self.ofono_push_notification_interface:
+                self.ofono_push_notification_interface.ofono_interface_props = self.ofono_interface_props.copy()
+
             self.ofono_interfaces[iface].on_property_changed(self.ofono_interface_changed(iface))
         except DBusError:
             self.ofono_interface_props.update({
@@ -330,6 +345,9 @@ class OfonoMMSManagerInterface(ServiceInterface):
 
             if self.ofono_mms_modemmanager_interface:
                 self.ofono_mms_modemmanager_interface.ofono_interface_props = self.ofono_interface_props.copy()
+
+            if self.ofono_push_notification_interface:
+                self.ofono_push_notification_interface.ofono_interface_props = self.ofono_interface_props.copy()
 
             self.ofono_interfaces[iface].on_property_changed(self.ofono_interface_changed(iface))
         except AttributeError:
@@ -356,6 +374,9 @@ class OfonoMMSManagerInterface(ServiceInterface):
         if self.ofono_mms_modemmanager_interface:
             self.ofono_mms_modemmanager_interface.ofono_interface_props = self.ofono_interface_props.copy()
             await self.ofono_mms_modemmanager_interface.set_props()
+
+        if self.ofono_push_notification_interface:
+            self.ofono_push_notification_interface.ofono_interface_props = self.ofono_interface_props.copy()
 
 def get_version():
     return "2.6.1"
