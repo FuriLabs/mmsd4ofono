@@ -13,7 +13,7 @@ from dbus_next.service import ServiceInterface, method, dbus_property, signal
 from dbus_next.constants import PropertyAccess
 from dbus_next import DBusError, BusType, Variant
 
-from mmsd import OfonoMMSServiceInterface, OfonoMMSModemManagerInterface, OfonoPushNotification, Ofono, DBus
+from mmsd import OfonoMMSServiceInterface, OfonoMMSModemManagerInterface, OfonoMMSMessageInterface, OfonoPushNotification, Ofono, DBus
 from mmsd.utils import async_locked
 from mmsd.logging import mmsd_print
 
@@ -196,7 +196,7 @@ class OfonoMMSManagerInterface(ServiceInterface):
         self.ofono_mms_interfaces.append(self.ofono_mms_modemmanager_interface)
         self.ofono_mms_objects.append('/org/ofono/mms')
 
-        self.ofono_push_notification_interface = OfonoPushNotification(self.system_bus, self.ofono_client, self.ofono_props, self.ofono_interfaces, self.ofono_interface_props, self.mms_dir, self.verbose)
+        self.ofono_push_notification_interface = OfonoPushNotification(self.system_bus, self.ofono_client, self.ofono_props, self.ofono_interfaces, self.ofono_interface_props, self.mms_dir, self.export_mms_message, self.verbose)
         await self.ofono_push_notification_interface.RegisterAgent('/mmsd')
         self.ofono_mms_interfaces.append(self.ofono_push_notification_interface)
         self.ofono_mms_objects.append('/mmsd')
@@ -212,6 +212,23 @@ class OfonoMMSManagerInterface(ServiceInterface):
                     ctx_interface = self.ofono_client["ofono_context"][ctx_path]['org.ofono.ConnectionContext']
                     await self.force_activate_context()
                     ctx_interface.on_property_changed(self.context_active_changed)
+
+    def export_mms_message(self, uuid, date, subject, sender, delivery_report, modem_number, recipients, smil, attachments):
+        print(f"exporting MMS message object with date {date}, subject: {subject}, sender: {sender}, delivery report: {delivery_report}, modem number: {modem_number}, recipients: {recipients}")
+        ofono_mms_message = OfonoMMSMessageInterface(self.mms_dir, self.verbose)
+        ofono_mms_message.props.update({
+            'Status': Variant('s', 'received'),
+            'Date': Variant('s', date),
+            'Subject': Variant('s', subject),
+            'Sender': Variant('s',sender),
+            'Delivery Report': Variant('b', delivery_report),
+            'Modem Number': Variant('s', modem_number),
+            'Recipients': Variant('{sv}', recipients),
+            'Smil': Variant('s', smil),
+            'Attachments': Variant('{sv}', attachments)
+        })
+
+        self.session_bus.export(f'/org/ofono/mms/{uuid}', self.ofono_mms_message)
 
     async def force_activate_context(self):
         while True:

@@ -18,7 +18,7 @@ from mmsdecoder.message import MMSMessage
 from mmsdecoder.wsp_pdu import WELL_KNOWN_CONTENT_TYPES
 
 class OfonoPushNotification(ServiceInterface):
-    def __init__(self, bus, ofono_client, ofono_props, ofono_interfaces, ofono_interface_props, mms_dir, verbose=False):
+    def __init__(self, bus, ofono_client, ofono_props, ofono_interfaces, ofono_interface_props, mms_dir, export_mms_message, verbose=False):
         super().__init__("org.ofono.PushNotificationAgent")
         self.bus = bus
         self.verbose = verbose
@@ -28,6 +28,7 @@ class OfonoPushNotification(ServiceInterface):
         self.ofono_interfaces = ofono_interfaces
         self.ofono_interface_props = ofono_interface_props
         self.mms_dir = mms_dir
+        self.export_mms_message = export_mms_message
         self.agent_path = False
         self.registered = False
 
@@ -92,9 +93,63 @@ class OfonoPushNotification(ServiceInterface):
                 if response.status_code == 200:
                     uuid = str(uuid4())
                     smil_path = join(self.mms_dir, uuid)
+                    status_path = join(self.mms_dir, f"{uuid}.status")
+
                     with open(smil_path, 'wb') as file:
                         file.write(response.content)
                     mmsd_print(f"SMIL successfully saved to {smil_path}", self.verbose)
+
+                    mms_smil = MMSMessage.from_data(response.content)
+
+                    sent_time = info['SentTime'].value if 'SentTime' in info else ''
+                    message_id = mms_smil.headers.get('Transaction-Id') or mms_smil.headers.get('Message-ID') or transaction_id or wap_application_id or ''
+
+                    meta_info = f"""
+[info]
+read=false
+state=received
+id={message_id}
+date={sent_time}
+                    """.strip()
+
+                    with open(status_path, 'w') as status_file:
+                        status_file.write(meta_info)
+                    mmsd_print(f"Meta info successfully saved to {status_path}", self.verbose)
+                    attachments = []
+                    for index, part in enumerate(mms_smil.data_parts):
+                        attachment_path = join(self.mms_dir, f"{uuid}.attachment.{index}")
+                        with open(attachment_path, 'wb') as file:
+                            mmsd_print(f"Writing attachment with index {index} of content type {part.content_type} to {attachment_path}", self.verbose)
+                            file.write(part.data)
+
+                        offset = 0
+                        len_data = len(part.data)
+
+                        attachment_info = {
+                            'id': uuid,
+                            'content-type': part.content_type,
+                            'filename': f"{uuid}.attachment.{index}",
+                            'offset': offset,
+                            'len': len_data
+                        }
+
+                        attachments.append(attachment_info)
+
+                        if 'application/smil' in part.content_type:
+                            smil_data = part.data
+
+                    if smil_data:
+                        if mms_smil.headers.get('Delivery-Report') == "False":
+                            delivery_report = False
+                        else:
+                            delivery_report = True
+
+                        recipients = []
+                        recipient = mms_smil.headers.get('From').split('/')[0]
+                        recipients.append(recipients)
+
+                        modem_number = mms_smil.headers.get('To').split('/')[0]
+                        #self.export_mms_message(uuid, sent_time, message_class, sender, delivery_report, modem_number, recipients, smil_data, attachments)
                 else:
                     mmsd_print(f"Failed to retrieve SMIL. Status code: {response.status_code}", self.verbose)
             except Exception as e:
