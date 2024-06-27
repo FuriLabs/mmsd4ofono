@@ -94,12 +94,18 @@ class OfonoPushNotification(ServiceInterface):
                     uuid = str(uuid4())
                     smil_path = join(self.mms_dir, uuid)
                     status_path = join(self.mms_dir, f"{uuid}.status")
+                    headers_path = join(self.mms_dir, f"{uuid}.headers")
 
                     with open(smil_path, 'wb') as file:
                         file.write(response.content)
                     mmsd_print(f"SMIL successfully saved to {smil_path}", self.verbose)
 
                     mms_smil = MMSMessage.from_data(response.content)
+
+                    with open(headers_path, 'w') as headers_file:
+                        for header_key, header_value in mms_smil.headers.items():
+                            headers_file.write(f"{header_key}={header_value}\n")
+                    mmsd_print(f"Headers successfully saved to {headers_path}", self.verbose)
 
                     sent_time = info['SentTime'].value if 'SentTime' in info else ''
                     message_id = mms_smil.headers.get('Transaction-Id') or mms_smil.headers.get('Message-ID') or transaction_id or wap_application_id or ''
@@ -149,7 +155,7 @@ date={sent_time}
                         recipients.append(recipients)
 
                         modem_number = mms_smil.headers.get('To').split('/')[0]
-                        #self.export_mms_message(uuid, sent_time, message_class, sender, delivery_report, modem_number, recipients, smil_data, attachments)
+                        self.export_mms_message(sent_time, sender, delivery_report, modem_number, recipients, smil_data, attachments)
                 else:
                     mmsd_print(f"Failed to retrieve SMIL. Status code: {response.status_code}", self.verbose)
             except Exception as e:

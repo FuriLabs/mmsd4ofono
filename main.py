@@ -21,6 +21,8 @@ from mmsdecoder.message import MMSMessage
 
 has_bus = False
 
+mms_message_i = 1
+
 class OfonoMMSManagerInterface(ServiceInterface):
     def __init__(self, loop, system_bus, session_bus, verbose=False):
         super().__init__('org.ofono.mms.Manager')
@@ -213,22 +215,28 @@ class OfonoMMSManagerInterface(ServiceInterface):
                     await self.force_activate_context()
                     ctx_interface.on_property_changed(self.context_active_changed)
 
-    def export_mms_message(self, uuid, date, subject, sender, delivery_report, modem_number, recipients, smil, attachments):
-        print(f"exporting MMS message object with date {date}, subject: {subject}, sender: {sender}, delivery report: {delivery_report}, modem number: {modem_number}, recipients: {recipients}")
+    def export_mms_message(self, date, sender, delivery_report, modem_number, recipients, smil, attachments):
         ofono_mms_message = OfonoMMSMessageInterface(self.mms_dir, self.verbose)
-        ofono_mms_message.props.update({
+        props_array = {
             'Status': Variant('s', 'received'),
             'Date': Variant('s', date),
-            'Subject': Variant('s', subject),
-            'Sender': Variant('s',sender),
+            'Sender': Variant('s', sender),
             'Delivery Report': Variant('b', delivery_report),
             'Modem Number': Variant('s', modem_number),
-            'Recipients': Variant('{sv}', recipients),
+            'Recipients': Variant('as', recipients),
             'Smil': Variant('s', smil),
-            'Attachments': Variant('{sv}', attachments)
-        })
+            'Attachments': Variant('a{sv}', attachments)
+        }
 
-        self.session_bus.export(f'/org/ofono/mms/{uuid}', self.ofono_mms_message)
+        ofono_mms_message.update_properties(props_array)
+
+        global mms_message_i
+        object_path = f'/org/ofono/mms/{mms_message_i}'
+        self.session_bus.export(object_path, ofono_mms_message)
+        mms_message_i += 1
+
+        self.ofono_mms_service_interface.messages.append([object_path, props_array])
+        self.ofono_mms_service_interface.MessageAdded(object_path, props_array)
 
     async def force_activate_context(self):
         while True:

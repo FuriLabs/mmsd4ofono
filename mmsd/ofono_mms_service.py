@@ -21,6 +21,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
         self.ofono_interface_props = ofono_interface_props
         self.mms_dir = mms_dir
         self.mms_config_file = join(self.mms_dir, 'mms')
+        self.messages = []
         self.props = {
             'UseDeliveryReports': Variant('b', False),
             'AutoCreateSMIL': Variant('b', False),
@@ -72,7 +73,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
     @method()
     async def GetMessages(self) -> 'a(oa{sv})':
         mmsd_print("Getting messages", self.verbose)
-        return []
+        return self.messages
 
     @method()
     async def GetProperties(self) -> 'a{sv}':

@@ -12,7 +12,7 @@ import asyncio
 class OfonoMMSMessageInterface(ServiceInterface):
     def __init__(self, mms_dir, verbose=False):
         super().__init__('org.ofono.mms.Message')
-        mmsd_print("Initializing MMS Messageinterface", verbose)
+        mmsd_print("Initializing MMS Message interface", verbose)
         self.mms_dir = mms_dir
         self.verbose = verbose
         self.props = {
@@ -23,9 +23,9 @@ class OfonoMMSMessageInterface(ServiceInterface):
             'Delivery Report': Variant('b', False),
             'Delivery Status': Variant('s', ''),
             'Modem Number': Variant('s', ''),
-            'Recipients': Variant('{sv}', ''),
+            'Recipients': Variant('as', []),
             'Smil': Variant('s', ''),
-            'Attachments': Variant('{sv}', '')
+            'Attachments': Variant('a{sv}', {})
         }
 
     @method()
@@ -57,20 +57,20 @@ class OfonoMMSMessageInterface(ServiceInterface):
     def Sender(self) -> 's':
         return self.props['Sender'].value
 
-#    @dbus_property(access=PropertyAccess.READ, name="Delivery Report")
-#    def DeliveryReport(self) -> 'b':
-#        return self.props['Delivery Report'].value
+    @dbus_property(access=PropertyAccess.READ, name="Delivery Report")
+    def DeliveryReport(self) -> 'b':
+        return self.props['Delivery Report'].value
 
-#    @dbus_property(access=PropertyAccess.READ, name="Delivery Status")
-#    def DeliveryStatus(self) -> 's':
-#        return self.props['Delivery Status'].value
+    @dbus_property(access=PropertyAccess.READ, name="Delivery Status")
+    def DeliveryStatus(self) -> 's':
+        return self.props['Delivery Status'].value
 
-#    @dbus_property(access=PropertyAccess.READ, name="Modem Number")
-#    def ModemNumber(self) -> 's':
-#        return self.props['Modem Number'].value
+    @dbus_property(access=PropertyAccess.READ, name="Modem Number")
+    def ModemNumber(self) -> 's':
+        return self.props['Modem Number'].value
 
     @dbus_property(access=PropertyAccess.READ)
-    def Recipients(self) -> '{sv}':
+    def Recipients(self) -> 'as':
         return self.props['Recipients'].value
 
     @dbus_property(access=PropertyAccess.READ)
@@ -78,5 +78,10 @@ class OfonoMMSMessageInterface(ServiceInterface):
         return self.props['Smil'].value
 
     @dbus_property(access=PropertyAccess.READ)
-    def Attachments(self) -> '{sv}':
+    def Attachments(self) -> 'a{sv}':
         return self.props['Attachments'].value
+
+    def update_properties(self, props_array):
+        for key, value in props_array.items():
+            if key in self.props:
+                self.props[key] = value
