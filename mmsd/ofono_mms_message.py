@@ -25,7 +25,7 @@ class OfonoMMSMessageInterface(ServiceInterface):
             'Modem Number': Variant('s', ''),
             'Recipients': Variant('as', []),
             'Smil': Variant('s', ''),
-            'Attachments': Variant('a{sv}', {})
+            'Attachments': Variant('a(ssstt)', [])
         }
 
     @method()
@@ -78,7 +78,7 @@ class OfonoMMSMessageInterface(ServiceInterface):
         return self.props['Smil'].value
 
     @dbus_property(access=PropertyAccess.READ)
-    def Attachments(self) -> 'a{sv}':
+    def Attachments(self) -> 'a(ssstt)':
         return self.props['Attachments'].value
 
     def update_properties(self, props_array):

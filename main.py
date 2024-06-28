@@ -215,17 +215,17 @@ class OfonoMMSManagerInterface(ServiceInterface):
                     await self.force_activate_context()
                     ctx_interface.on_property_changed(self.context_active_changed)
 
-    def export_mms_message(self, date, sender, delivery_report, modem_number, recipients, smil, attachments):
+    def export_mms_message(self, status, date, sender, delivery_report, recipients, smil, attachments):
         ofono_mms_message = OfonoMMSMessageInterface(self.mms_dir, self.verbose)
         props_array = {
-            'Status': Variant('s', 'received'),
+            'Status': Variant('s', status),
             'Date': Variant('s', date),
             'Sender': Variant('s', sender),
             'Delivery Report': Variant('b', delivery_report),
-            'Modem Number': Variant('s', modem_number),
+            'Modem Number': Variant('s', self.ofono_mms_modemmanager_interface.props['ModemNumber'].value),
             'Recipients': Variant('as', recipients),
             'Smil': Variant('s', smil),
-            'Attachments': Variant('a{sv}', attachments)
+            'Attachments': Variant('a(ssstt)', attachments)
         }
 
         ofono_mms_message.update_properties(props_array)
