@@ -21,8 +21,6 @@ from mmsdecoder.message import MMSMessage
 
 has_bus = False
 
-mms_message_i = 1
-
 class OfonoMMSManagerInterface(ServiceInterface):
     def __init__(self, loop, system_bus, session_bus, verbose=False):
         super().__init__('org.ofono.mms.Manager')
@@ -215,8 +213,12 @@ class OfonoMMSManagerInterface(ServiceInterface):
                     await self.force_activate_context()
                     ctx_interface.on_property_changed(self.context_active_changed)
 
-    def export_mms_message(self, status, date, sender, delivery_report, recipients, smil, attachments):
+    def export_mms_message(self, uuid, status, date, sender, delivery_report, recipients, smil, attachments):
         ofono_mms_message = OfonoMMSMessageInterface(self.mms_dir, self.verbose)
+
+        if status == 'received' and not recipients:
+            recipients.append(self.ofono_mms_modemmanager_interface.props['ModemNumber'].value)
+
         props_array = {
             'Status': Variant('s', status),
             'Date': Variant('s', date),
@@ -230,10 +232,8 @@ class OfonoMMSManagerInterface(ServiceInterface):
 
         ofono_mms_message.update_properties(props_array)
 
-        global mms_message_i
-        object_path = f'/org/ofono/mms/{mms_message_i}'
+        object_path = f'/org/ofono/mms/{uuid}'
         self.session_bus.export(object_path, ofono_mms_message)
-        mms_message_i += 1
 
         self.ofono_mms_service_interface.messages.append([object_path, props_array])
         self.ofono_mms_service_interface.MessageAdded(object_path, props_array)

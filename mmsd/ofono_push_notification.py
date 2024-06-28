@@ -5,7 +5,7 @@ from os.path import join
 from requests import get
 from array import array
 from uuid import uuid4
-from re import sub
+from re import sub, search
 import asyncio
 
 from dbus_next.service import ServiceInterface, method, dbus_property, signal
@@ -77,7 +77,7 @@ class OfonoPushNotification(ServiceInterface):
             try:
                 response = get(content_location, proxies=proxies)
                 if response.status_code == 200:
-                    uuid = str(uuid4())
+                    uuid = str(uuid4()).replace('-', '1')
                     smil_path = join(self.mms_dir, uuid)
                     status_path = join(self.mms_dir, f"{uuid}.status")
                     headers_path = join(self.mms_dir, f"{uuid}.headers")
@@ -96,35 +96,44 @@ class OfonoPushNotification(ServiceInterface):
                     sent_time = info['SentTime'].value if 'SentTime' in info else ''
                     message_id = mms_smil.headers.get('Transaction-Id') or mms_smil.headers.get('Message-ID') or transaction_id or ''
 
-                    meta_info = f"""
-[info]
+                    meta_info = f"""[info]
 read=false
 state=received
 id={message_id}
-date={sent_time}
-                    """
+date={sent_time}"""
 
                     with open(status_path, 'w') as status_file:
                         status_file.write(meta_info)
                         mmsd_print(f"Meta info successfully saved to {status_path}", self.verbose)
 
                     attachments = []
+                    smil_src = ''
                     for index, part in enumerate(mms_smil.data_parts):
                         attachment_path = join(self.mms_dir, f"{uuid}.attachment.{index}")
                         with open(attachment_path, 'wb') as file:
                             mmsd_print(f"Writing attachment with index {index} of content type {part.content_type} to {attachment_path}", self.verbose)
                             file.write(part.data)
 
-                        attachment_info = [str(index), part.content_type, attachment_path, 0, len(part.data)]
-                        attachments.append(attachment_info)
+                        if not smil_src:
+                            smil_src = str(index)
 
                         if 'application/smil' in part.content_type:
-                            smil_data = part.data.decode('utf-8')
+                            # smil should be added to smil prop only, not to attachments
+                            smil_data = part.data.decode('utf-8').replace("\n", "").replace("\r", "")
+
+                            smil_src = self.extract_smil_src(smil_data)
+                            if smil_src is None:
+                                smil_src = str(index)
+                            else:
+                                smil_src = f'<{smil_src}>'
+                        else:
+                            attachment_info = [smil_src, part.content_type, attachment_path, 0, len(part.data)]
+                            attachments.append(attachment_info)
 
                     if smil_data:
                         recipients = [] # need a way to check if its a group, then query for recipients
                         sender_number = sender.split('/')[0]
-                        self.export_mms_message('received', sent_time, sender_number, mms_smil.headers.get('Delivery-Report'), recipients, smil_data, attachments)
+                        self.export_mms_message(uuid, 'received', sent_time, sender_number, mms_smil.headers.get('Delivery-Report'), recipients, smil_data, attachments)
                 else:
                     mmsd_print(f"Failed to retrieve SMIL. Status code: {response.status_code}", self.verbose)
             except Exception as e:
@@ -148,6 +157,18 @@ date={sent_time}
                 if name.lower() == "mms":
                     proxy = ctx[1]['MessageProxy'].value
         return proxy
+
+    def extract_smil_src(self, xml_string):
+        pattern = r'<img\s[^>]*src="([^"]+)"'
+
+        match = search(pattern, xml_string)
+
+        if match:
+            src_with_extension = match.group(1)
+            src_without_extension = sub(r'\.[^.]+$', '', src_with_extension)
+            return src_without_extension
+        else:
+            return None
 
     def ofono_changed(self, name, varval):
         self.ofono_props[name] = varval
