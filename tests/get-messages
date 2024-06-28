@@ -4,6 +4,22 @@
 
 import dbus
 
+def print_dbus_array(array):
+    return "[{}]".format(", ".join(resolve_dbus_value(item) for item in array))
+
+def print_dbus_struct(struct):
+    return "({})".format(", ".join(resolve_dbus_value(item) for item in struct))
+
+def resolve_dbus_value(val):
+    if isinstance(val, dbus.Array):
+        return print_dbus_array(val)
+    elif isinstance(val, dbus.Struct):
+        return print_dbus_struct(val)
+    elif isinstance(val, dbus.Dictionary):
+        return "{{{}}}".format(", ".join("{}: {}".format(k, resolve_dbus_value(v)) for k, v in val.items()))
+    else:
+        return str(val)
+
 bus = dbus.SessionBus()
 
 manager = dbus.Interface(bus.get_object('org.ofono.mms', '/org/ofono/mms'),
@@ -21,4 +37,5 @@ for path, properties in messages:
     print("[ {} ]".format(path))
 
     for key, val in properties.items():
-        print("    {} = {}".format(key, str(val)))
+        resolved_val = resolve_dbus_value(val)
+        print("    {} = {}".format(key, resolved_val))
