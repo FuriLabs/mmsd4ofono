@@ -200,6 +200,7 @@ class OfonoMMSManagerInterface(ServiceInterface):
         await self.ofono_push_notification_interface.RegisterAgent('/mmsd')
         self.ofono_mms_interfaces.append(self.ofono_push_notification_interface)
         self.ofono_mms_objects.append('/mmsd')
+        self.ofono_push_notification_interface.export_old_messages()
 
         self.modem_added_block = False
 

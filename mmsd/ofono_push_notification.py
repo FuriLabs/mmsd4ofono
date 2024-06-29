@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2024 Bardia Moshiri <fakeshell@bardia.tech>
 
-from os.path import join
+from os.path import join, exists
 from requests import get
 from array import array
 from uuid import uuid4
+from os import listdir
 from re import sub, search
 import asyncio
 
@@ -147,6 +148,80 @@ date={sent_time}"""
         mmsd_print(f"Agent released on path {self.agent_path}", self.verbose)
         self.registered = False
         self.bus.unexport(self.agent_path)
+
+    def export_old_messages(self):
+        export_entries = {}
+
+        for filename in listdir(self.mms_dir):
+            if filename.endswith('.status'):
+                basename = filename.rsplit('.status', 1)[0]
+                attachment_count = 0
+                headers_file = basename + '.headers'
+
+                if exists(join(self.mms_dir, headers_file)):
+                    for attachment_file in listdir(self.mms_dir):
+                        if attachment_file.startswith(basename + '.attachment.'):
+                            attachment_count += 1
+
+                    if attachment_count >= 2:
+                        status_path = join(self.mms_dir, filename)
+
+                        if exists(status_path):
+                            status_data = {
+                                'state': None,
+                                'date': None,
+                                'sender': None,
+                                'delivery_report': None,
+                                'smil_data': None,
+                                'attachments': []
+                            }
+
+                            with open(status_path, 'r') as file:
+                                for line in file:
+                                    if line.startswith('state='):
+                                        status_data['state'] = line.split('=')[1].strip()
+                                    elif line.startswith('date='):
+                                        status_data['date'] = line.split('=')[1].strip()
+
+                            smil_file = join(self.mms_dir, basename)
+                            if exists(smil_file):
+                                with open(smil_file, 'rb') as smil_data:
+                                    mms_smil = MMSMessage.from_data(smil_data.read())
+
+                                    if mms_smil.headers['Delivery-Report']:
+                                        status_data['delivery_report'] = mms_smil.headers['Delivery-Report']
+                                    else:
+                                        status_data['delivery_report'] = False
+
+                                    if mms_smil.headers['From']:
+                                        status_data['sender'] = mms_smil.headers['From'].split('/')[0]
+                                    else:
+                                        status_data['sender'] = ''
+
+                                    smil_src = ''
+                                    for index, part in enumerate(mms_smil.data_parts):
+                                        attachment_path = join(self.mms_dir, f"{basename}.attachment.{index}")
+                                        if not smil_src:
+                                            smil_src = str(index)
+
+                                        if 'application/smil' in part.content_type:
+                                            # smil should be added to smil prop only, not to attachments
+                                            smil_data = part.data.decode('utf-8').replace("\n", "").replace("\r", "")
+                                            status_data['smil_data'] = smil_data
+                                            smil_src = self.extract_smil_src(smil_data)
+                                            if smil_src is None:
+                                                smil_src = str(index)
+                                            else:
+                                                smil_src = f'<{smil_src}>'
+                                        else:
+                                            attachment_info = [smil_src, part.content_type, attachment_path, 0, len(part.data)]
+                                            status_data['attachments'].append(attachment_info)
+
+                            export_entries[basename] = status_data
+
+        for basename, entry in export_entries.items():
+            mmsd_print(f"re-exporting old message {basename}", self.verbose)
+            self.export_mms_message(basename, entry['state'], entry['date'], entry['sender'], entry['delivery_report'], [], entry['smil_data'], entry['attachments'])
 
     async def get_mms_context_info(self):
         proxy = ''
