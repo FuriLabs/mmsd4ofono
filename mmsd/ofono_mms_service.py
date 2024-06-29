@@ -71,31 +71,31 @@ class OfonoMMSServiceInterface(ServiceInterface):
             f.writelines(new_lines)
 
     @method()
-    async def GetMessages(self) -> 'a(oa{sv})':
+    def GetMessages(self) -> 'a(oa{sv})':
         mmsd_print("Getting messages", self.verbose)
         return self.messages
 
     @method()
-    async def GetProperties(self) -> 'a{sv}':
+    def GetProperties(self) -> 'a{sv}':
         mmsd_print("Getting properties", self.verbose)
         return self.props
 
     @method()
-    async def SendMessage(self, recipients: 'as', smil: 'v', attachments: 'a(sss)') -> 'o':
+    def SendMessage(self, recipients: 'as', smil: 'v', attachments: 'a(sss)') -> 'o':
         mmsd_print(f"Sending message to recipients {recipients}, smil {smil}, attachments {recipients}", self.verbose)
         object_path = '/'
         self.MessageAdded(object_path, {})
         return object_path
 
     @method()
-    async def SendMessage(self, recipients: 'as', options: 'a{sv}', attachments: 'a(sss)') -> 'o':
+    def SendMessage(self, recipients: 'as', options: 'a{sv}', attachments: 'a(sss)') -> 'o':
         mmsd_print(f"Sending message to recipients {recipients}, options {options}, attachments {recipients}", self.verbose)
         object_path = '/'
         self.MessageAdded(object_path, options)
         return object_path
 
     @method()
-    async def SetProperty(self, property: 's', value: 'v'):
+    def SetProperty(self, property: 's', value: 'v'):
         mmsd_print(f"Setting property {property} to value {value}", self.verbose)
         if property in self.props:
             self.props[property] = value

@@ -215,7 +215,7 @@ class OfonoMMSManagerInterface(ServiceInterface):
                     ctx_interface.on_property_changed(self.context_active_changed)
 
     def export_mms_message(self, uuid, status, date, sender, delivery_report, recipients, smil, attachments):
-        ofono_mms_message = OfonoMMSMessageInterface(self.mms_dir, self.verbose)
+        ofono_mms_message = OfonoMMSMessageInterface(self.mms_dir, uuid, self.verbose)
 
         if status == 'received' and not recipients:
             recipients.append(self.ofono_mms_modemmanager_interface.props['ModemNumber'].value)

@@ -1,19 +1,21 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2024 Bardia Moshiri <fakeshell@bardia.tech>
 
+from os.path import join
+import asyncio
+
 from dbus_next.service import ServiceInterface, method, dbus_property, signal
 from dbus_next.constants import PropertyAccess
 from dbus_next import Variant, DBusError
 
 from mmsd.logging import mmsd_print
 
-import asyncio
-
 class OfonoMMSMessageInterface(ServiceInterface):
-    def __init__(self, mms_dir, verbose=False):
+    def __init__(self, mms_dir, uuid, verbose=False):
         super().__init__('org.ofono.mms.Message')
-        mmsd_print("Initializing MMS Message interface", verbose)
+        mmsd_print(f"Initializing MMS Message interface with UUID {uuid}", verbose)
         self.mms_dir = mms_dir
+        self.uuid = uuid
         self.verbose = verbose
         self.props = {
             'Status': Variant('s', ''),
@@ -30,15 +32,30 @@ class OfonoMMSMessageInterface(ServiceInterface):
 
     @method()
     def MarkRead(self):
-        mmsd_print("Marking as read", self.verbose)
+        mmsd_print(f"Marking {self.uuid} as read", self.verbose)
+
+        self.props['Status'] = Variant('s', 'read')
+        self.PropertyChanged('Status', self.props['Status'])
+
+        status_file = join(self.mms_dir, self.uuid + '.status')
+        with open(status_file, 'r+') as f:
+            lines = f.readlines()
+            for i, line in enumerate(lines):
+                if line.startswith('read='):
+                    lines[i] = 'read=true\n'
+                elif line.startswith('state='):
+                    lines[i] = 'state=read\n'
+
+            f.seek(0)
+            f.writelines(lines)
 
     @method()
     def Delete(self):
         mmsd_print("Deleting message", self.verbose)
 
     @signal()
-    def PropertyChanged(self, name, value) -> 'a{sv}':
-        mmsd_print(f"Property {name} changed to value {value}", self.verbose)
+    def PropertyChanged(self, name, value) -> 'sv':
+        mmsd_print(f"Emitting property changed: name: {name}, value: {value}", self.verbose)
         return [name, value]
 
     @dbus_property(access=PropertyAccess.READ)
