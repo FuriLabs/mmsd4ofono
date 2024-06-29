@@ -215,7 +215,7 @@ class OfonoMMSManagerInterface(ServiceInterface):
                     ctx_interface.on_property_changed(self.context_active_changed)
 
     def export_mms_message(self, uuid, status, date, sender, delivery_report, recipients, smil, attachments):
-        ofono_mms_message = OfonoMMSMessageInterface(self.mms_dir, uuid, self.verbose)
+        ofono_mms_message = OfonoMMSMessageInterface(self.mms_dir, uuid, self.delete_mms_message, self.verbose)
 
         if status == 'received' and not recipients:
             recipients.append(self.ofono_mms_modemmanager_interface.props['ModemNumber'].value)
@@ -238,6 +238,17 @@ class OfonoMMSManagerInterface(ServiceInterface):
 
         self.ofono_mms_service_interface.messages.append([object_path, props_array])
         self.ofono_mms_service_interface.MessageAdded(object_path, props_array)
+
+    def delete_mms_message(self, uuid):
+        object_path = f'/org/ofono/mms/{uuid}'
+        mmsd_print(f"Unexporting MMS message at path {object_path}", self.verbose)
+        self.session_bus.unexport(object_path)
+        for message in self.ofono_mms_service_interface.messages:
+            if message[0] == object_path:
+                self.ofono_mms_service_interface.messages.remove(message)
+                break
+
+        self.ofono_mms_service_interface.MessageRemoved(object_path)
 
     async def force_activate_context(self):
         while True:

@@ -2,6 +2,7 @@
 # Copyright (C) 2024 Bardia Moshiri <fakeshell@bardia.tech>
 
 from os.path import join
+from os import listdir, remove
 import asyncio
 
 from dbus_next.service import ServiceInterface, method, dbus_property, signal
@@ -11,11 +12,12 @@ from dbus_next import Variant, DBusError
 from mmsd.logging import mmsd_print
 
 class OfonoMMSMessageInterface(ServiceInterface):
-    def __init__(self, mms_dir, uuid, verbose=False):
+    def __init__(self, mms_dir, uuid, delete_mms_message, verbose=False):
         super().__init__('org.ofono.mms.Message')
         mmsd_print(f"Initializing MMS Message interface with UUID {uuid}", verbose)
         self.mms_dir = mms_dir
         self.uuid = uuid
+        self.delete_mms_message = delete_mms_message
         self.verbose = verbose
         self.props = {
             'Status': Variant('s', ''),
@@ -51,7 +53,17 @@ class OfonoMMSMessageInterface(ServiceInterface):
 
     @method()
     def Delete(self):
-        mmsd_print("Deleting message", self.verbose)
+        matching_files = [filename for filename in listdir(self.mms_dir) if self.uuid in filename]
+        mmsd_print(f"Deleting message {self.uuid}: Matching files are: {matching_files}", self.verbose)
+
+        self.delete_mms_message(self.uuid)
+        for filename in matching_files:
+            file_path = join(self.mms_dir, filename)
+            try:
+                remove(file_path)
+                mmsd_print(f"Removed {filename}", self.verbose)
+            except OSError as e:
+                mmsd_print(f"Error removing {filename}: {e}", self.verbose)
 
     @signal()
     def PropertyChanged(self, name, value) -> 'sv':
