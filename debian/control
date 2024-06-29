@@ -1,0 +1,19 @@
+Source: mmsd4ofono
+Maintainer: Bardia Moshiri <fakeshell@bardia.tech>
+Section: misc
+Priority: optional
+Build-Depends: debhelper-compat (= 13),
+               dh-python,
+               python3
+Standards-Version: 4.5.0.3
+Vcs-Browser: https://github.com/furilabs/mmsd4ofono
+Vcs-Git: https://github.com/furilabs/mmsd4ofono.git
+
+Package: mmsd4ofono
+Architecture: all
+Depends: ${misc:Depends},
+         ${python3:Depends},
+	 python3-dbus-next,
+	 python3-gi,
+         python3-dbus
+Description: A python daemon implementing the MMSD API
