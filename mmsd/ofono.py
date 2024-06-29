@@ -79,15 +79,15 @@ class Ofono(CachedClient):
 
     bus_name = "org.ofono"
     introspections = {
-        "ofono" : '/usr/lib/ofono2mm/ofono.xml',
-        'ofono_context' : '/usr/lib/ofono2mm/ofono_context.xml',
-        'ofono_modem' : '/usr/lib/ofono2mm/ofono_modem.xml',
-        'ofono_operator' : '/usr/lib/ofono2mm/ofono_operator.xml',
+        "ofono" : '/usr/lib/mmsd/ofono.xml',
+        'ofono_context' : '/usr/lib/mmsd/ofono_context.xml',
+        'ofono_modem' : '/usr/lib/mmsd/ofono_modem.xml',
+        'ofono_operator' : '/usr/lib/mmsd/ofono_operator.xml',
     }
 
 class DBus(CachedClient):
 
     bus_name = "org.freedesktop.DBus"
     introspections = {
-        "dbus" : '/usr/lib/ofono2mm/dbus.xml',
+        "dbus" : '/usr/lib/mmsd/dbus.xml',
     }
