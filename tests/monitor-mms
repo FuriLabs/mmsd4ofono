@@ -25,9 +25,9 @@ def message_added(name, value, member, path, interface):
     iface = interface[interface.rfind(".") + 1:]
     print("{%s} [%s] %s %s" % (iface, name, member, value))
 
-def message_removed(name, value, member, path, interface):
+def message_removed(name, member, path, interface):
     iface = interface[interface.rfind(".") + 1:]
-    print("{%s} [%s] %s %s" % (iface, name, member, value))
+    print("{%s} [%s] %s" % (iface, name, member))
 
 def property_changed(name, value, member, path, interface):
     iface = interface[interface.rfind(".") + 1:]
