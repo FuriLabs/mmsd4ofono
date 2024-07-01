@@ -61,8 +61,6 @@ class OfonoMMSManagerInterface(ServiceInterface):
             except Exception as e:
                 mmsd_print(f"Failed to get services: {e}", self.verbose)
 
-        self.ServiceAdded(self.props['services'][0][0], self.props['services'][0][1])
-
         return self.props['services']
 
     @signal()
