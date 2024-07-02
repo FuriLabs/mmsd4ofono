@@ -124,7 +124,6 @@ date={sent_time}"""
                         else:
                             attachment_info = [f'<{smil_src[index-1]}>', part.content_type, attachment_path, 0, len(part.data)]
                             attachments.append(attachment_info)
-
                     if smil_data:
                         recipients = [] # need a way to check if its a group, then query for recipients
                         sender_number = sender.split('/')[0]
