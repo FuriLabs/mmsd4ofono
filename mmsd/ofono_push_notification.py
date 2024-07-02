@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2024 Bardia Moshiri <fakeshell@bardia.tech>
 
-from os.path import join, exists
+from os.path import join, exists, splitext
 from requests import get
 from array import array
 from uuid import uuid4
 from os import listdir
-from re import sub, search
+from re import sub, compile
 import asyncio
 
 from dbus_next.service import ServiceInterface, method, dbus_property, signal
@@ -108,27 +108,21 @@ date={sent_time}"""
                         mmsd_print(f"Meta info successfully saved to {status_path}", self.verbose)
 
                     attachments = []
-                    smil_src = ''
+                    smil_src = len(mms_smil.data_parts)
                     for index, part in enumerate(mms_smil.data_parts):
                         attachment_path = join(self.mms_dir, f"{uuid}.attachment.{index}")
                         with open(attachment_path, 'wb') as file:
                             mmsd_print(f"Writing attachment with index {index} of content type {part.content_type} to {attachment_path}", self.verbose)
                             file.write(part.data)
 
-                        if not smil_src:
-                            smil_src = str(index)
-
                         if 'application/smil' in part.content_type:
                             # smil should be added to smil prop only, not to attachments
                             smil_data = part.data.decode('utf-8').replace("\n", "").replace("\r", "")
-
                             smil_src = self.extract_smil_src(smil_data)
                             if smil_src is None:
-                                smil_src = str(index)
-                            else:
-                                smil_src = f'<{smil_src}>'
+                                num_attachments = len(mms_smil.data_parts)
                         else:
-                            attachment_info = [smil_src, part.content_type, attachment_path, 0, len(part.data)]
+                            attachment_info = [f'<{smil_src[index-1]}>', part.content_type, attachment_path, 0, len(part.data)]
                             attachments.append(attachment_info)
 
                     if smil_data:
@@ -198,11 +192,9 @@ date={sent_time}"""
                                     else:
                                         status_data['sender'] = ''
 
-                                    smil_src = ''
+                                    smil_src = len(mms_smil.data_parts)
                                     for index, part in enumerate(mms_smil.data_parts):
                                         attachment_path = join(self.mms_dir, f"{basename}.attachment.{index}")
-                                        if not smil_src:
-                                            smil_src = str(index)
 
                                         if 'application/smil' in part.content_type:
                                             # smil should be added to smil prop only, not to attachments
@@ -210,11 +202,9 @@ date={sent_time}"""
                                             status_data['smil_data'] = smil_data
                                             smil_src = self.extract_smil_src(smil_data)
                                             if smil_src is None:
-                                                smil_src = str(index)
-                                            else:
-                                                smil_src = f'<{smil_src}>'
+                                                num_attachments = len(mms_smil.data_parts)
                                         else:
-                                            attachment_info = [smil_src, part.content_type, attachment_path, 0, len(part.data)]
+                                            attachment_info = [f'<{smil_src[index-1]}>', part.content_type, attachment_path, 0, len(part.data)]
                                             status_data['attachments'].append(attachment_info)
 
                             export_entries[basename] = status_data
@@ -234,14 +224,11 @@ date={sent_time}"""
         return proxy
 
     def extract_smil_src(self, xml_string):
-        pattern = r'<img\s[^>]*src="([^"]+)"'
-
-        match = search(pattern, xml_string)
-
-        if match:
-            src_with_extension = match.group(1)
-            src_without_extension = sub(r'\.[^.]+$', '', src_with_extension)
-            return src_without_extension
+        src_pattern = compile(r'<(\w+)\s+[^>]*src="([^"]*)"[^>]*>')
+        sources = src_pattern.findall(xml_string)
+        src_list = [splitext(match[1])[0] for match in sources]
+        if src_list:
+            return src_list
         else:
             return None
 
