@@ -13,8 +13,15 @@ Package: mmsd4ofono
 Architecture: all
 Depends: ${misc:Depends},
          ${python3:Depends},
-	 python3-dbus-next,
-	 python3-gi,
+         python3-dbus-next,
+         python3-gi,
          python3-dbus,
          python3-requests
 Description: A python daemon implementing the MMSD API
+
+Package: mmsd4ofono-scripts
+Architecture: all
+Depends: ${misc:Depends},
+         ${python3:Depends},
+         python3-dbus,
+Description: A python daemon implementing the MMSD API - test scripts
