@@ -2,11 +2,11 @@
 # Copyright (C) 2024 Bardia Moshiri <fakeshell@bardia.tech>
 
 from os.path import join, exists, splitext
-from requests import get
+from aiohttp import ClientSession
 from array import array
 from uuid import uuid4
-from os import listdir
 from re import sub, compile
+from os import listdir
 import asyncio
 
 from dbus_next.service import ServiceInterface, method, dbus_property, signal
@@ -23,7 +23,6 @@ class OfonoPushNotification(ServiceInterface):
         self.bus = bus
         self.verbose = verbose
         self.ofono_client = ofono_client
-        self.verbose = verbose
         self.ofono_props = ofono_props
         self.ofono_interfaces = ofono_interfaces
         self.ofono_interface_props = ofono_interface_props
@@ -71,70 +70,10 @@ class OfonoPushNotification(ServiceInterface):
 
         mmsd_print(f"Transaction-Id: {transaction_id}, Content-Location: {content_location}, From: {sender}", self.verbose)
 
-        proxy = ''
         proxy = await self.get_mms_context_info()
-        if proxy != '':
-            proxies = {'http': f'http://{proxy}', 'https': f'http://{proxy}'}
-            try:
-                response = get(content_location, proxies=proxies)
-                if response.status_code == 200:
-                    uuid = str(uuid4()).replace('-', '1')
-                    smil_path = join(self.mms_dir, uuid)
-                    status_path = join(self.mms_dir, f"{uuid}.status")
-                    headers_path = join(self.mms_dir, f"{uuid}.headers")
-
-                    with open(smil_path, 'wb') as file:
-                        file.write(response.content)
-                        mmsd_print(f"SMIL successfully saved to {smil_path}", self.verbose)
-
-                    mms_smil = MMSMessage.from_data(response.content)
-
-                    with open(headers_path, 'w') as headers_file:
-                        for header_key, header_value in mms_smil.headers.items():
-                            headers_file.write(f"{header_key}={header_value}\n")
-                        mmsd_print(f"Headers successfully saved to {headers_path}", self.verbose)
-
-                    sent_time = info['SentTime'].value if 'SentTime' in info else ''
-                    message_id = mms_smil.headers.get('Transaction-Id') or mms_smil.headers.get('Message-ID') or transaction_id or ''
-
-                    meta_info = f"""[info]
-read=false
-state=received
-id={message_id}
-date={sent_time}"""
-
-                    with open(status_path, 'w') as status_file:
-                        status_file.write(meta_info)
-                        mmsd_print(f"Meta info successfully saved to {status_path}", self.verbose)
-
-                    attachments = []
-                    smil_src = len(mms_smil.data_parts)
-                    for index, part in enumerate(mms_smil.data_parts):
-                        attachment_path = join(self.mms_dir, f"{uuid}.attachment.{index}")
-                        with open(attachment_path, 'wb') as file:
-                            mmsd_print(f"Writing attachment with index {index} of content type {part.content_type} to {attachment_path}", self.verbose)
-                            file.write(part.data)
-
-                        if 'application/smil' in part.content_type:
-                            # smil should be added to smil prop only, not to attachments
-                            smil_data = part.data.decode('utf-8').replace("\n", "").replace("\r", "")
-                            smil_src = self.extract_smil_src(smil_data)
-                            if smil_src is None:
-                                num_attachments = len(mms_smil.data_parts)
-                        else:
-                            attachment_info = [f'<{smil_src[index-1]}>', part.content_type, attachment_path, 0, len(part.data)]
-                            attachments.append(attachment_info)
-                    if smil_data:
-                        recipients = [] # need a way to check if its a group, then query for recipients
-                        sender_number = sender.split('/')[0]
-                        self.export_mms_message(uuid, 'received', sent_time, sender_number, mms_smil.headers.get('Delivery-Report'), recipients, smil_data, attachments)
-                else:
-                    mmsd_print(f"Failed to retrieve SMIL. Status code: {response.status_code}", self.verbose)
-            except Exception as e:
-                mmsd_print(f"Failed to download SMIL: {e}", self.verbose)
-                pass # we should handle messages that could not be fetched from message center
-        else:
-            mmsd_print(f"Could not pull down the mms message. proxy is empty", self.verbose)
+        response_content = await self.fetch_mms_content(content_location, proxy)
+        if response_content:
+            await self.process_mms_content(response_content, transaction_id, content_location, sender, info)
 
     @method()
     async def Release(self):
@@ -211,6 +150,73 @@ date={sent_time}"""
         for basename, entry in export_entries.items():
             mmsd_print(f"re-exporting old message {basename}", self.verbose)
             self.export_mms_message(basename, entry['state'], entry['date'], entry['sender'], entry['delivery_report'], [], entry['smil_data'], entry['attachments'])
+
+    async def fetch_mms_content(self, url, proxy):
+        async with ClientSession() as session:
+            try:
+                if proxy:
+                    async with session.get(url, proxy=f"http://{proxy}") as response:
+                        if response.status == 200:
+                            return await response.read()
+                else:
+                    async with session.get(url) as response:
+                        if response.status == 200:
+                            return await response.read()
+            except Exception as e:
+                mmsd_print(f"Failed to download SMIL: {e}", self.verbose)
+                return None
+
+    async def process_mms_content(self, content, transaction_id, content_location, sender, info):
+        uuid = str(uuid4()).replace('-', '1')
+        smil_path = join(self.mms_dir, uuid)
+        status_path = join(self.mms_dir, f"{uuid}.status")
+        headers_path = join(self.mms_dir, f"{uuid}.headers")
+
+        with open(smil_path, 'wb') as file:
+            file.write(content)
+            mmsd_print(f"SMIL successfully saved to {smil_path}", self.verbose)
+
+        mms_smil = MMSMessage.from_data(content)
+
+        with open(headers_path, 'w') as headers_file:
+            for header_key, header_value in mms_smil.headers.items():
+                headers_file.write(f"{header_key}={header_value}\n")
+            mmsd_print(f"Headers successfully saved to {headers_path}", self.verbose)
+
+        sent_time = info['SentTime'].value if 'SentTime' in info else ''
+        message_id = mms_smil.headers.get('Transaction-Id') or mms_smil.headers.get('Message-ID') or transaction_id or ''
+
+        meta_info = f"""[info]
+read=false
+state=received
+id={message_id}
+date={sent_time}"""
+
+        with open(status_path, 'w') as status_file:
+            status_file.write(meta_info)
+            mmsd_print(f"Meta info successfully saved to {status_path}", self.verbose)
+
+        attachments = []
+        smil_src = len(mms_smil.data_parts)
+        for index, part in enumerate(mms_smil.data_parts):
+            attachment_path = join(self.mms_dir, f"{uuid}.attachment.{index}")
+            with open(attachment_path, 'wb') as file:
+                mmsd_print(f"Writing attachment with index {index} of content type {part.content_type} to {attachment_path}", self.verbose)
+                file.write(part.data)
+
+            if 'application/smil' in part.content_type:
+                smil_data = part.data.decode('utf-8').replace("\n", "").replace("\r", "")
+                smil_src = self.extract_smil_src(smil_data)
+                if smil_src is None:
+                    num_attachments = len(mms_smil.data_parts)
+            else:
+                attachment_info = [f'<{smil_src[index-1]}>', part.content_type, attachment_path, 0, len(part.data)]
+                attachments.append(attachment_info)
+
+        if smil_data:
+            recipients = []  # need a way to check if its a group, then query for recipients
+            sender_number = sender.split('/')[0]
+            self.export_mms_message(uuid, 'received', sent_time, sender_number, mms_smil.headers.get('Delivery-Report'), recipients, smil_data, attachments)
 
     async def get_mms_context_info(self):
         proxy = ''
