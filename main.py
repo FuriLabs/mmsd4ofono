@@ -45,6 +45,19 @@ class OfonoMMSManagerInterface(ServiceInterface):
         self.mms_dir = expanduser("~/.mms/modemmanager")
         makedirs(self.mms_dir, exist_ok=True)
         self.loop.create_task(self.check_ofono_presence())
+        self.unused_interfaces = {
+            "org.ofono.CallSettings",
+            "org.ofono.CallVolume",
+            "org.ofono.SimToolkit",
+            "org.ofono.Phonebook",
+            "org.ofono.SmartMessaging",
+            "org.ofono.CallBarring",
+            "org.ofono.CallForwarding",
+            "org.ofono.MessageWaiting",
+            "org.ofono.AllowedAccessPoints",
+            "org.nemomobile.ofono.CellInfo",
+            "org.nemomobile.ofono.SimInfo"
+        }
         self.props = {
             'services': [
                 ['/org/ofono/mms/modemmanager', {'Identity': Variant('s', 'modemmanager')}]
@@ -332,22 +345,9 @@ class OfonoMMSManagerInterface(ServiceInterface):
         return ch
 
     async def add_ofono_interface(self, iface):
-        unused_interfaces = {
-            "org.ofono.CallSettings",
-            "org.ofono.CallVolume",
-            "org.ofono.SimToolkit",
-            "org.ofono.Phonebook",
-            "org.ofono.SmartMessaging",
-            "org.ofono.CallBarring",
-            "org.ofono.CallForwarding",
-            "org.ofono.MessageWaiting",
-            "org.ofono.AllowedAccessPoints",
-            "org.nemomobile.ofono.CellInfo",
-            "org.nemomobile.ofono.SimInfo"
-        }
-
-        if iface in unused_interfaces:
+        if iface in self.unused_interfaces:
             mmsd_print(f"Interface is {iface} which is unused, skipping", self.verbose)
+            return
         else:
             mmsd_print(f"Add oFono interface for iface {iface}", self.verbose)
 
