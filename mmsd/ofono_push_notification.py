@@ -70,6 +70,10 @@ class OfonoPushNotification(ServiceInterface):
 
         mmsd_print(f"Transaction-Id: {transaction_id}, Content-Location: {content_location}, From: {sender}", self.verbose)
 
+        if content_location is None:
+            mmsd_print("Content location is None, is this even MMS? skipping", self.verbose)
+            return
+
         proxy = await self.get_mms_context_info()
         response_content = await self.fetch_mms_content(content_location, proxy)
         if response_content:
