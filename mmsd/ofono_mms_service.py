@@ -47,16 +47,20 @@ class OfonoMMSServiceInterface(ServiceInterface):
         return random_string
 
     async def send_message(self, recipients, attachments):
-        id = self.generate_random_string()
-
         mms = MMSMessage()
+
         modem_number = self.ofono_mms_modemmanager_interface.props['ModemNumber'].value
-        mms.headers['From'] = f"{modem_number}/TYPE=PLMN"
+        if modem_number:
+            mms.headers['From'] = f"{modem_number}/TYPE=PLMN"
+
         mms.headers['To'] = f"{recipients[0]}/TYPE=PLMN"
         mms.headers['Message-Type'] = 'm-send-req'
         mms.headers['MMS-Version'] = '1.1'
+
+        id = self.generate_random_string()
         mms.headers['Transaction-Id'] = id
         mms.headers['Message-ID'] = id
+
         mms.headers['Content-Type'] = ('application/vnd.wap.multipart.mixed', {})
         payload = mms.encode()
         smil = ''.join(mms.smil().split())
