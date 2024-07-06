@@ -16,7 +16,7 @@ Depends: ${misc:Depends},
          python3-dbus-next,
          python3-gi,
          python3-dbus,
-         python3-requests
+         python3-aiohttp,
 Description: A python daemon implementing the MMSD API
 
 Package: mmsd4ofono-scripts
