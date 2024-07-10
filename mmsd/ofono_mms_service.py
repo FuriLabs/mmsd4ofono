@@ -8,6 +8,7 @@ from string import ascii_letters, digits
 from random import choice
 from uuid import uuid4
 from io import StringIO
+from re import sub
 import asyncio
 
 from dbus_next.service import ServiceInterface, method, dbus_property, signal
@@ -16,7 +17,7 @@ from dbus_next import Variant, DBusError
 
 from mmsd.logging import mmsd_print
 
-from mmsdecoder.message import MMSMessage
+from mmsdecoder.message import MMSMessage, MMSMessagePage
 
 class OfonoMMSServiceInterface(ServiceInterface):
     def __init__(self, ofono_client, ofono_props, ofono_interfaces, ofono_interface_props, mms_dir, ofono_mms_modemmanager_interface, export_mms_message, path, verbose=False):
@@ -54,6 +55,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
         if modem_number:
             mms.headers['From'] = f"{modem_number}/TYPE=PLMN"
 
+        recipients = [sub(r'\D', '', recipient) for recipient in recipients]
         mms.headers['To'] = f"{recipients[0]}/TYPE=PLMN"
         mms.headers['Message-Type'] = 'm-send-req'
         mms.headers['MMS-Version'] = '1.1'
@@ -63,6 +65,19 @@ class OfonoMMSServiceInterface(ServiceInterface):
         mms.headers['Message-ID'] = id
 
         mms.headers['Content-Type'] = ('application/vnd.wap.multipart.mixed', {})
+
+        text_content = None
+        for attachment in attachments:
+            if attachment[1] == 'text/plain':
+                with open(attachment[2], 'r') as file:
+                    text_content = file.read()
+                break
+
+        if text_content:
+            text_slide = MMSMessagePage()
+            text_slide.add_text(text_content)
+            mms.add_page(text_slide)
+
         payload = mms.encode()
         smil = ''.join(mms.smil().split())
 
