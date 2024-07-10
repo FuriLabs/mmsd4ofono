@@ -18,8 +18,10 @@ from mmsd.logging import mmsd_print
 from mmsdecoder.message import MMSMessage
 
 class OfonoPushNotification(ServiceInterface):
-    def __init__(self, bus, ofono_client, ofono_props, ofono_interfaces, ofono_interface_props, mms_dir, export_mms_message, verbose=False):
+    def __init__(self, bus, ofono_client, ofono_props, ofono_interfaces, ofono_interface_props, mms_dir, export_mms_message, path, verbose=False):
         super().__init__("org.ofono.PushNotificationAgent")
+        self.modem_name = path
+        mmsd_print("Initializing oFono push notification agent interface", verbose)
         self.bus = bus
         self.verbose = verbose
         self.ofono_client = ofono_client

@@ -19,8 +19,9 @@ from mmsd.logging import mmsd_print
 from mmsdecoder.message import MMSMessage
 
 class OfonoMMSServiceInterface(ServiceInterface):
-    def __init__(self, ofono_client, ofono_props, ofono_interfaces, ofono_interface_props, mms_dir, ofono_mms_modemmanager_interface, export_mms_message, verbose=False):
+    def __init__(self, ofono_client, ofono_props, ofono_interfaces, ofono_interface_props, mms_dir, ofono_mms_modemmanager_interface, export_mms_message, path, verbose=False):
         super().__init__('org.ofono.mms.Service')
+        self.modem_name = path
         mmsd_print("Initializing MMS Service interface", verbose)
         self.ofono_client = ofono_client
         self.verbose = verbose
@@ -153,8 +154,8 @@ class OfonoMMSServiceInterface(ServiceInterface):
             file_length = getsize(file_path)
             updated_attachment = list(attachment) + [0, file_length]
             updated_attachments.append(updated_attachment)
-
         attachments = updated_attachments
+
         smil = await self.send_message(recipients, attachments)
         date = datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
         self.export_mms_message(uuid, 'sent', date, self.ofono_mms_modemmanager_interface.props['ModemNumber'].value, False, recipients, smil, attachments)
