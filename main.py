@@ -244,14 +244,14 @@ class OfonoMMSManagerInterface(ServiceInterface):
 
         ofono_mms_message.update_properties(props_array)
 
-        object_path = f'/org/ofono/mms/{uuid}'
+        object_path = f'/org/ofono/mms/modemmanager/{uuid}'
         self.session_bus.export(object_path, ofono_mms_message)
 
         self.ofono_mms_service_interface.messages.append([object_path, props_array])
         self.ofono_mms_service_interface.MessageAdded(object_path, props_array)
 
     def delete_mms_message(self, uuid):
-        object_path = f'/org/ofono/mms/{uuid}'
+        object_path = f'/org/ofono/mms/modemmanager/{uuid}'
         mmsd_print(f"Unexporting MMS message at path {object_path}", self.verbose)
         self.session_bus.unexport(object_path)
         for message in self.ofono_mms_service_interface.messages:
