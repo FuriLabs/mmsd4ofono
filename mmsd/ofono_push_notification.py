@@ -80,6 +80,9 @@ class OfonoPushNotification(ServiceInterface):
         response_content = await self.fetch_mms_content(content_location, proxy)
         if response_content:
             await self.process_mms_content(response_content, transaction_id, content_location, sender, info)
+        else:
+            # TODO: we need to retry getting messages if they fail!
+            mmsd_print("Failed to get response content", self.verbose)
 
     @method()
     async def Release(self):
@@ -160,17 +163,28 @@ class OfonoPushNotification(ServiceInterface):
     async def fetch_mms_content(self, url, proxy):
         async with ClientSession() as session:
             try:
+                mmsd_print(f"Fetching URL: {url} using proxy: {proxy}", self.verbose)
                 if proxy:
                     async with session.get(url, proxy=f"http://{proxy}") as response:
+                        mmsd_print(f"Response status: {response.status}", self.verbose)
                         if response.status == 200:
-                            return await response.read()
+                            content = await response.read()
+                            mmsd_print(f"Content length: {len(content)}", self.verbose)
+                            return content
+                        else:
+                            mmsd_print(f"Failed to fetch content. HTTP status: {response.status}", self.verbose)
                 else:
                     async with session.get(url) as response:
+                        mmsd_print(f"Response status: {response.status}", self.verbose)
                         if response.status == 200:
-                            return await response.read()
+                            content = await response.read()
+                            mmsd_print(f"Content length: {len(content)}", self.verbose)
+                            return content
+                        else:
+                            mmsd_print(f"Failed to fetch content. HTTP status: {response.status}", self.verbose)
             except Exception as e:
                 mmsd_print(f"Failed to download SMIL: {e}", self.verbose)
-                return None
+            return None
 
     async def process_mms_content(self, content, transaction_id, content_location, sender, info):
         uuid = str(uuid4()).replace('-', '1')
