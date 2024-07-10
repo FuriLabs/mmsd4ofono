@@ -146,7 +146,6 @@ class OfonoMMSServiceInterface(ServiceInterface):
     async def SendMessage(self, recipients: 'as', smil: 'v', attachments: 'a(sss)') -> 'o':
         mmsd_print(f"Sending message to recipients {recipients}, attachments {attachments}", self.verbose)
         uuid = str(uuid4()).replace('-', '1')
-        object_path = f'/org/ofono/mms/modemmanager/{uuid}'
 
         updated_attachments = []
         for attachment in attachments:
@@ -158,7 +157,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
 
         smil = await self.send_message(recipients, attachments)
         date = datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
-        self.export_mms_message(uuid, 'sent', date, self.ofono_mms_modemmanager_interface.props['ModemNumber'].value, False, recipients, smil, attachments)
+        object_path = self.export_mms_message(uuid, 'sent', date, self.ofono_mms_modemmanager_interface.props['ModemNumber'].value, False, recipients, smil, attachments)
         return object_path
 
 #    @method()

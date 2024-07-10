@@ -47,6 +47,17 @@ class OfonoMMSManagerInterface(ServiceInterface):
         makedirs(self.mms_dir, exist_ok=True)
         self.loop.create_task(self.check_ofono_presence())
         self.unused_interfaces = {
+            "org.ofono.RadioSettings",
+            "org.ofono.NetworkMonitor",
+            "org.ofono.IpMultimediaSystem",
+            "org.ofono.SupplementaryServices",
+            "org.ofono.NetworkRegistration",
+            "org.ofono.MessageManager",
+            "org.ofono.NetworkTime",
+            "org.ofono.SmsHistory",
+            "org.ofono.SimAuthentication",
+            "org.ofono.VoiceCallManager",
+            "org.ofono.CellBroadcast",
             "org.ofono.CallSettings",
             "org.ofono.CallVolume",
             "org.ofono.SimToolkit",
@@ -59,6 +70,7 @@ class OfonoMMSManagerInterface(ServiceInterface):
             "org.nemomobile.ofono.CellInfo",
             "org.nemomobile.ofono.SimInfo"
         }
+
         self.props = {
             'services': [
                 ['/org/ofono/mms/modemmanager', {'Identity': Variant('s', 'modemmanager')}]
@@ -207,10 +219,10 @@ class OfonoMMSManagerInterface(ServiceInterface):
         self.ofono_mms_objects.append('/org/ofono/mms')
 
         self.ofono_mms_service_interface = OfonoMMSServiceInterface(self.ofono_client, self.ofono_props, self.ofono_interfaces, self.ofono_interface_props, self.mms_dir, self.ofono_mms_modemmanager_interface, self.export_mms_message, path, self.verbose)
-        self.session_bus.export('/org/ofono/mms/modemmanager', self.ofono_mms_service_interface)
+        self.session_bus.export(self.props['services'][0][0], self.ofono_mms_service_interface)
         self.ofono_mms_service_interface.set_props()
         self.ofono_mms_interfaces.append(self.ofono_mms_service_interface)
-        self.ofono_mms_objects.append('/org/ofono/mms/modemmanager')
+        self.ofono_mms_objects.append(self.props['services'][0][0])
 
         self.ofono_push_notification_interface = OfonoPushNotification(self.system_bus, self.ofono_client, self.ofono_props, self.ofono_interfaces, self.ofono_interface_props, self.mms_dir, self.export_mms_message, path, self.verbose)
         await self.ofono_push_notification_interface.RegisterAgent('/mmsd')
@@ -250,14 +262,17 @@ class OfonoMMSManagerInterface(ServiceInterface):
 
         ofono_mms_message.update_properties(props_array)
 
-        object_path = f'/org/ofono/mms/modemmanager/{uuid}'
+        object_path = f"{self.props['services'][0][0]}/{uuid}"
+
         self.session_bus.export(object_path, ofono_mms_message)
 
         self.ofono_mms_service_interface.messages.append([object_path, props_array])
         self.ofono_mms_service_interface.MessageAdded(object_path, props_array)
 
+        return object_path
+
     def delete_mms_message(self, uuid):
-        object_path = f'/org/ofono/mms/modemmanager/{uuid}'
+        object_path = f"{self.props['services'][0][0]}/{uuid}"
         mmsd_print(f"Unexporting MMS message at path {object_path}", self.verbose)
         self.session_bus.unexport(object_path)
         for message in self.ofono_mms_service_interface.messages:
