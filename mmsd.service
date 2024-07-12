@@ -1,0 +1,15 @@
+[Unit]
+Description=MMSD oFono proxy
+After=sm.puri.Phosh.service
+StartLimitBurst=5000
+StartLimitIntervalSec=0
+
+[Service]
+Type=dbus
+BusName=org.ofono.mms
+# this is somewhat also handled in mmsd but it can break at times and we can't depend on ofono directly as it is a system service
+# in ofono2mm we have the same case, but it depends on ofono so when that restarts, ofono2mm restarts which makes it not much of a problem
+ExecStartPre=gdbus wait org.ofono -y
+ExecStart=/usr/bin/mmsd
+Restart=always
+RestartSec=5s
