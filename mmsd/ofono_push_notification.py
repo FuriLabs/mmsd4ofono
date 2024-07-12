@@ -51,7 +51,14 @@ class OfonoPushNotification(ServiceInterface):
             mmsd_print(f"Agent already registered at path {path}", self.verbose)
             return
 
-        await self.ofono_interfaces['org.ofono.PushNotification'].call_register_agent(path)
+        while True:
+            try:
+                await self.ofono_interfaces['org.ofono.PushNotification'].call_register_agent(path)
+                break
+            except Exception as e:
+                mmsd_print(f"Failed to register oFono push agent: {e}", self.verbose)
+            asyncio.sleep(2)
+
         self.bus.export(path, self)
 
         self.agent_path = path
