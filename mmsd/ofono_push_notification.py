@@ -32,6 +32,19 @@ class OfonoPushNotification(ServiceInterface):
         self.export_mms_message = export_mms_message
         self.agent_path = False
         self.registered = False
+        self.retry_queue = asyncio.Queue()
+        asyncio.create_task(self.retry_failed_requests())
+
+    async def retry_failed_requests(self):
+        while True:
+            transaction_id, content_location, sender, info = await self.retry_queue.get()
+            proxy = await self.get_mms_context_info()
+            response_content = await self.fetch_mms_content(content_location, proxy)
+            if response_content:
+                await self.process_mms_content(response_content, transaction_id, content_location, sender, info)
+            else:
+                self.retry_queue.put_nowait((transaction_id, content_location, sender, info))
+            await asyncio.sleep(5)
 
     async def RegisterAgent(self, path: 'o'):
         if self.registered:
@@ -81,8 +94,8 @@ class OfonoPushNotification(ServiceInterface):
         if response_content:
             await self.process_mms_content(response_content, transaction_id, content_location, sender, info)
         else:
-            # TODO: we need to retry getting messages if they fail!
-            mmsd_print("Failed to get response content", self.verbose)
+            mmsd_print("Failed to get response content, adding to retry queue", self.verbose)
+            self.retry_queue.put_nowait((transaction_id, content_location, sender, info))
 
     @method()
     async def Release(self):
