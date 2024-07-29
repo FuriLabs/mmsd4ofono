@@ -43,12 +43,14 @@ class OfonoMMSServiceInterface(ServiceInterface):
             'ForceCAres': Variant('b', True)
         }
 
+        self.loop = asyncio.get_event_loop()
+
     def generate_random_string(self, length=8):
         characters = ascii_letters + digits
         random_string = ''.join(choice(characters) for _ in range(length))
         return random_string.upper()
 
-    async def send_message(self, recipients, attachments):
+    def build_message(self, recipients, attachments):
         mms = MMSMessage()
 
         modem_number = self.ofono_mms_modemmanager_interface.props['ModemNumber'].value
@@ -81,32 +83,41 @@ class OfonoMMSServiceInterface(ServiceInterface):
         payload = mms.encode()
         smil = ''.join(mms.smil().split())
 
-        mmsc = self.ofono_mms_modemmanager_interface.props['CarrierMMSC'].value
-        proxy = self.ofono_mms_modemmanager_interface.props['CarrierMMSProxy'].value
-        gw_host, gw_port = proxy.split(':')
-        gw_port = int(gw_port)
+        return mms, payload, smil, id
 
-        mms_socket = socket(AF_INET, SOCK_STREAM)
-        mms_socket.connect((gw_host, gw_port))
-        mms_socket.send(f"POST {mmsc} HTTP/1.0\r\n".encode())
-        mms_socket.send("Content-Type: application/vnd.wap.mms-message\r\n".encode())
-        mms_socket.send(f"Content-Length: {len(payload)}\r\n\r\n".encode())
-
-        mms_socket.sendall(payload)
-
-        buf = StringIO()
-
+    async def send_message(self, payload, uuid):
         while True:
-            data = mms_socket.recv(4096)
-            if not data:
+            try:
+                mmsc = self.ofono_mms_modemmanager_interface.props['CarrierMMSC'].value
+                proxy = self.ofono_mms_modemmanager_interface.props['CarrierMMSProxy'].value
+                gw_host, gw_port = proxy.split(':')
+                gw_port = int(gw_port)
+
+                mms_socket = socket(AF_INET, SOCK_STREAM)
+                mms_socket.connect((gw_host, gw_port))
+                mms_socket.send(f"POST {mmsc} HTTP/1.0\r\n".encode())
+                mms_socket.send("Content-Type: application/vnd.wap.mms-message\r\n".encode())
+                mms_socket.send(f"Content-Length: {len(payload)}\r\n\r\n".encode())
+
+                mms_socket.sendall(payload)
+
+                buf = StringIO()
+
+                while True:
+                    data = mms_socket.recv(4096)
+                    if not data:
+                        break
+
+                buf.write(data.decode())
+
+                mms_socket.close()
+                buf.close()
+
+                mmsd_print(f"Message {uuid} sent successfully", self.verbose)
                 break
-
-        buf.write(data.decode())
-
-        mms_socket.close()
-        buf.close()
-
-        return smil, payload, id
+            except Exception as e:
+                mmsd_print(f"Error sending message: {str(e)}. Retrying...", self.verbose)
+                await asyncio.sleep(5)
 
     def set_props(self):
         mmsd_print("Setting properties", self.verbose)
@@ -172,7 +183,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
         return self.props
 
     @method()
-    async def SendMessage(self, recipients: 'as', smil: 'v', attachments: 'a(sss)') -> 'o':
+    def SendMessage(self, recipients: 'as', smil: 'v', attachments: 'a(sss)') -> 'o':
         mmsd_print(f"Sending message to recipients {recipients}, attachments {attachments}", self.verbose)
         uuid = str(uuid4()).replace('-', '1')
 
@@ -184,10 +195,12 @@ class OfonoMMSServiceInterface(ServiceInterface):
             updated_attachments.append(updated_attachment)
         attachments = updated_attachments
 
-        smil, pdu, id = await self.send_message(recipients, attachments)
+        mms, payload, smil, id = self.build_message(recipients, attachments)
+        self.loop.create_task(self.send_message(payload, uuid))
         date = datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
+        self.create_message_files(payload, uuid, date, id)
         object_path = self.export_mms_message(uuid, 'sent', date, self.ofono_mms_modemmanager_interface.props['ModemNumber'].value, False, recipients, smil, attachments)
-        self.create_message_files(pdu, uuid, date, id)
+
         return object_path
 
 #    @method()
