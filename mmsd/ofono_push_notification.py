@@ -254,8 +254,20 @@ date={sent_time}"""
                 attachments.append(attachment_info)
 
         if smil_data:
-            recipients = []  # need a way to check if its a group, then query for recipients
             sender_number = sender.split('/')[0]
+            recipients = []
+            numbers = []
+            if 'org.ofono.SimManager' in self.ofono_interface_props:
+                if 'SubscriberNumbers' in self.ofono_interface_props['org.ofono.SimManager']:
+                    numbers = self.ofono_interface_props['org.ofono.SimManager']['SubscriberNumbers'].value
+                    if numbers:
+                        own_number = numbers[0]
+                        to_number = mms_smil.headers.get('To').split('/')[0]
+                        if own_number != to_number:
+                            recipients.append(own_number)
+                            recipients.append(to_number)
+                            recipients.append(sender_number)
+
             self.export_mms_message(uuid, 'received', sent_time, sender_number, mms_smil.headers.get('Delivery-Report'), recipients, smil_data, attachments)
 
     async def get_mms_context_info(self):

@@ -46,7 +46,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
     def generate_random_string(self, length=8):
         characters = ascii_letters + digits
         random_string = ''.join(choice(characters) for _ in range(length))
-        return random_string
+        return random_string.upper()
 
     async def send_message(self, recipients, attachments):
         mms = MMSMessage()
@@ -106,7 +106,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
         mms_socket.close()
         buf.close()
 
-        return smil
+        return smil, payload, id
 
     def set_props(self):
         mmsd_print("Setting properties", self.verbose)
@@ -147,6 +147,20 @@ class OfonoMMSServiceInterface(ServiceInterface):
         with open(self.mms_config_file, 'w') as f:
             f.writelines(new_lines)
 
+    def create_message_files(self, pdu, uuid, date, id):
+        mmsd_print(f"Saving message {uuid} to disk", self.verbose)
+        pdu_path = join(self.mms_dir, uuid)
+        with open(pdu_path, 'wb') as pdu_file:
+            pdu_file.write(pdu)
+
+        status_path = join(self.mms_dir, f"{uuid}.status")
+        with open(status_path, 'w') as status_file:
+            status_file.write(f"[info]\n")
+            status_file.write(f"read=false\n")
+            status_file.write(f"state=sent\n")
+            status_file.write(f"id={id}\n")
+            status_file.write(f"date={date}\n")
+
     @method()
     def GetMessages(self) -> 'a(oa{sv})':
         mmsd_print("Getting messages", self.verbose)
@@ -170,9 +184,10 @@ class OfonoMMSServiceInterface(ServiceInterface):
             updated_attachments.append(updated_attachment)
         attachments = updated_attachments
 
-        smil = await self.send_message(recipients, attachments)
+        smil, pdu, id = await self.send_message(recipients, attachments)
         date = datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
         object_path = self.export_mms_message(uuid, 'sent', date, self.ofono_mms_modemmanager_interface.props['ModemNumber'].value, False, recipients, smil, attachments)
+        self.create_message_files(pdu, uuid, date, id)
         return object_path
 
 #    @method()
