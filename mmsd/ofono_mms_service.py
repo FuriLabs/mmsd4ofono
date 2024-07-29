@@ -203,13 +203,26 @@ class OfonoMMSServiceInterface(ServiceInterface):
 
         return object_path
 
-#    @method()
-#    def SendMessage(self, recipients: 'as', options: 'a{sv}', attachments: 'a(sss)') -> 'o':
-#        mmsd_print(f"Sending message to recipients {recipients}, options {options}, attachments {attachments}", self.verbose)
-#        uuid = str(uuid4()).replace('-', '1')
-#        object_path = f'/org/ofono/mms/modemmanager/{uuid}'
-#        self.MessageAdded(object_path, options)
-#        return object_path
+    @method(name="SendMessage")
+    def SendMessage2(self, recipients: 'as', options: 'a{sv}', attachments: 'a(sss)') -> 'o':
+        mmsd_print(f"Sending message to recipients {recipients}, options: {options}, attachments {attachments}", self.verbose)
+        uuid = str(uuid4()).replace('-', '1')
+
+        updated_attachments = []
+        for attachment in attachments:
+            file_path = attachment[2]
+            file_length = getsize(file_path)
+            updated_attachment = list(attachment) + [0, file_length]
+            updated_attachments.append(updated_attachment)
+        attachments = updated_attachments
+
+        mms, payload, smil, id = self.build_message(recipients, attachments)
+        self.loop.create_task(self.send_message(payload, uuid))
+        date = datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
+        self.create_message_files(payload, uuid, date, id)
+        object_path = self.export_mms_message(uuid, 'sent', date, self.ofono_mms_modemmanager_interface.props['ModemNumber'].value, False, recipients, smil, attachments)
+
+        return object_path
 
     @method()
     def SetProperty(self, property: 's', value: 'v'):
