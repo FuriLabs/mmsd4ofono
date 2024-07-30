@@ -133,6 +133,10 @@ class MMSDecoder(wsp_pdu.Decoder):
 
             if header == mms_field_names[0x04][0]:
                 content_type_found = True
+            elif header == mms_field_names[0x17][0]:
+                if 'To' not in self._mms_message.headers:
+                    self._mms_message.headers['To'] = []
+                self._mms_message.headers['To'].append(value)
             else:
                 self._mms_message.headers[header] = value
 
