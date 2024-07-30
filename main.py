@@ -252,6 +252,7 @@ class OfonoMMSManagerInterface(ServiceInterface):
         props_array = {
             'Status': Variant('s', status),
             'Date': Variant('s', date),
+            'Subject': Variant('s', ''),
             'Sender': Variant('s', sender),
             'Delivery Report': Variant('b', delivery_report),
             'Modem Number': Variant('s', self.ofono_mms_modemmanager_interface.props['ModemNumber'].value),
@@ -259,6 +260,9 @@ class OfonoMMSManagerInterface(ServiceInterface):
             'Smil': Variant('s', smil),
             'Attachments': Variant('a(ssstt)', attachments)
         }
+
+        if status == 'sent':
+            props_array['Status'] = Variant('s', 'draft')
 
         ofono_mms_message.update_properties(props_array)
 
@@ -269,6 +273,10 @@ class OfonoMMSManagerInterface(ServiceInterface):
         self.ofono_mms_service_interface.messages.append([object_path, props_array])
         self.ofono_mms_service_interface.MessageAdded(object_path, props_array)
 
+        if status == 'sent':
+            props_array['Status'] = Variant('s', status)
+
+        ofono_mms_message.update_properties(props_array)
         ofono_mms_message.PropertyChanged('status', props_array['Status'])
 
         return object_path
