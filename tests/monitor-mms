@@ -9,9 +9,9 @@ from gi.repository import GLib
 import dbus
 import dbus.mainloop.glib
 
-def property_changed(name, value, path, interface):
+def property_changed(name, value, member, path, interface):
     iface = interface[interface.rfind(".") + 1:]
-    print("{%s} [%s] %s = %s" % (iface, path, name, value))
+    print("{%s} [%s] %s %s" % (iface, name, member, value))
 
 def service_added(name, value, member, path, interface):
     iface = interface[interface.rfind(".") + 1:]
@@ -29,55 +29,38 @@ def message_removed(name, member, path, interface):
     iface = interface[interface.rfind(".") + 1:]
     print("{%s} [%s] %s" % (iface, name, member))
 
-def property_changed(name, value, member, path, interface):
-    iface = interface[interface.rfind(".") + 1:]
-    print("{%s} [%s] %s %s" % (iface, name, member, value))
-
 if __name__ == '__main__':
     dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
-
     bus = dbus.SessionBus()
-
     bus.add_signal_receiver(property_changed,
                             bus_name="org.ofono.mms",
                             signal_name="PropertyChanged",
+                            member_keyword="member",
                             path_keyword="path",
                             interface_keyword="interface")
-
     bus.add_signal_receiver(service_added,
                             bus_name="org.ofono.mms",
                             signal_name="ServiceAdded",
                             member_keyword="member",
                             path_keyword="path",
                             interface_keyword="interface")
-
     bus.add_signal_receiver(service_removed,
                             bus_name="org.ofono.mms",
                             signal_name="ServiceRemoved",
                             member_keyword="member",
                             path_keyword="path",
                             interface_keyword="interface")
-
     bus.add_signal_receiver(message_added,
                             bus_name="org.ofono.mms",
                             signal_name="MessageAdded",
                             member_keyword="member",
                             path_keyword="path",
                             interface_keyword="interface")
-
     bus.add_signal_receiver(message_removed,
                             bus_name="org.ofono.mms",
                             signal_name="MessageRemoved",
                             member_keyword="member",
                             path_keyword="path",
                             interface_keyword="interface")
-
-    bus.add_signal_receiver(property_changed,
-                            bus_name="org.ofono.mms",
-                            signal_name="PropertyChanged",
-                            member_keyword="member",
-                            path_keyword="path",
-                            interface_keyword="interface")
-
     mainloop = GLib.MainLoop()
     mainloop.run()
