@@ -1,11 +1,13 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2024 Bardia Moshiri <fakeshell@bardia.tech>
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from os.path import join, exists, getsize
 from socket import socket, AF_INET, SOCK_STREAM
 from string import ascii_letters, digits
 from random import choice
+from time import sleep
 from uuid import uuid4
 from io import StringIO
 from re import sub
@@ -44,6 +46,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
         }
 
         self.loop = asyncio.get_event_loop()
+        self.executor = ThreadPoolExecutor()
 
     def generate_random_string(self, length=8):
         characters = ascii_letters + digits
@@ -85,7 +88,10 @@ class OfonoMMSServiceInterface(ServiceInterface):
 
         return mms, payload, smil, id
 
-    async def send_message(self, payload, uuid):
+    async def send_message_wrapper(self, payload, uuid):
+        await self.loop.run_in_executor(self.executor, self.send_message, payload, uuid)
+
+    def send_message(self, payload, uuid):
         while True:
             try:
                 mmsc = self.ofono_mms_modemmanager_interface.props['CarrierMMSC'].value
@@ -117,7 +123,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
                 break
             except Exception as e:
                 mmsd_print(f"Error sending message: {str(e)}. Retrying...", self.verbose)
-                await asyncio.sleep(5)
+                asyncio.sleep(5)
 
     def set_props(self):
         mmsd_print("Setting properties", self.verbose)
@@ -196,7 +202,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
         attachments = updated_attachments
 
         mms, payload, smil, id = self.build_message(recipients, attachments)
-        self.loop.create_task(self.send_message(payload, uuid))
+        self.loop.create_task(self.send_message_wrapper(payload, uuid))
         date = datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
         self.create_message_files(payload, uuid, date, id)
         object_path = self.export_mms_message(uuid, 'sent', date, self.ofono_mms_modemmanager_interface.props['ModemNumber'].value, False, recipients, smil, attachments)
@@ -217,7 +223,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
         attachments = updated_attachments
 
         mms, payload, smil, id = self.build_message(recipients, attachments)
-        self.loop.create_task(self.send_message(payload, uuid))
+        self.loop.create_task(self.send_message_wrapper(payload, uuid))
         date = datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
         self.create_message_files(payload, uuid, date, id)
         object_path = self.export_mms_message(uuid, 'sent', date, self.ofono_mms_modemmanager_interface.props['ModemNumber'].value, False, recipients, smil, attachments)
