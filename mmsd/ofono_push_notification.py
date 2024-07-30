@@ -149,7 +149,7 @@ class OfonoPushNotification(ServiceInterface):
                                 with open(smil_file, 'rb') as smil_data:
                                     mms_smil = MMSMessage.from_data(smil_data.read())
 
-                                    if mms_smil.headers['Delivery-Report']:
+                                    if "Delivery-Report" in mms_smil.headers and mms_smil.headers['Delivery-Report']:
                                         status_data['delivery_report'] = mms_smil.headers['Delivery-Report']
                                     else:
                                         status_data['delivery_report'] = False
@@ -268,7 +268,12 @@ date={sent_time}"""
                             recipients.append(to_number)
                             recipients.append(sender_number)
 
-            self.export_mms_message(uuid, 'received', sent_time, sender_number, mms_smil.headers.get('Delivery-Report'), recipients, smil_data, attachments)
+            if mms_smil.headers.get('Delivery-Report') is None:
+                delivery_report = False
+            else:
+                delivery_report = mms_smil.headers.get('Delivery-Report')
+
+            self.export_mms_message(uuid, 'received', sent_time, sender_number, delivery_report, recipients, smil_data, attachments)
 
     async def get_mms_context_info(self):
         proxy = ''
