@@ -269,6 +269,8 @@ class OfonoMMSManagerInterface(ServiceInterface):
         self.ofono_mms_service_interface.messages.append([object_path, props_array])
         self.ofono_mms_service_interface.MessageAdded(object_path, props_array)
 
+        ofono_mms_message.PropertyChanged('status', props_array['Status'])
+
         return object_path
 
     def delete_mms_message(self, uuid):
