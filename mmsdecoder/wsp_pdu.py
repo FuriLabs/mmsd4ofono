@@ -464,14 +464,24 @@ class Decoder:
         :rtype: str
         """
         b_decoded_string = b''
-        byte = next(byte_iter)
+        try:
+            byte = next(byte_iter)
+        except StopIteration:
+            return ""  # Return empty string for empty input
+
         # Remove Quote character (octet 127), if present
         if byte == 127:
-            byte = next(byte_iter)
+            try:
+                byte = next(byte_iter)
+            except StopIteration:
+                return ""  # Return empty string if end of iterator is reached after quote
 
         while byte != 0x00:
             b_decoded_string += bytes([byte])
-            byte = next(byte_iter)
+            try:
+                byte = next(byte_iter)
+            except StopIteration:
+                break
 
         try:
             # Lets try to decode it to the given encoding
