@@ -57,7 +57,7 @@ class OfonoPushNotification(ServiceInterface):
                 break
             except Exception as e:
                 mmsd_print(f"Failed to register oFono push agent: {e}", self.verbose)
-            asyncio.sleep(2)
+            await asyncio.sleep(2)
 
         self.bus.export(path, self)
 
