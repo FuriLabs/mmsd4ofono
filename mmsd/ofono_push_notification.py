@@ -259,7 +259,7 @@ date={sent_time}"""
             numbers = []
             to_numbers = mms_smil.headers.get('To', [])
             if to_numbers and len(to_numbers) > 1:
-                recipients.extend([sub(r'\D', '', to_number) for to_number in to_numbers])
+                recipients.extend(['+' + sub(r'\D', '', to_number) for to_number in to_numbers])
                 recipients.append(sender_number)
 
             if mms_smil.headers.get('Delivery-Report') is None:
