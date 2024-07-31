@@ -257,16 +257,10 @@ date={sent_time}"""
             sender_number = sender.split('/')[0]
             recipients = []
             numbers = []
-            if 'org.ofono.SimManager' in self.ofono_interface_props:
-                if 'SubscriberNumbers' in self.ofono_interface_props['org.ofono.SimManager']:
-                    numbers = self.ofono_interface_props['org.ofono.SimManager']['SubscriberNumbers'].value
-                    if numbers:
-                        own_number = numbers[0]
-                        to_number = mms_smil.headers.get('To').split('/')[0]
-                        if own_number != to_number:
-                            recipients.append(own_number)
-                            recipients.append(to_number)
-                            recipients.append(sender_number)
+            to_numbers = mms_smil.headers.get('To', [])
+            if to_numbers and len(to_numbers) > 1:
+                recipients.extend([sub(r'\D', '', to_number) for to_number in to_numbers])
+                recipients.append(sender_number)
 
             if mms_smil.headers.get('Delivery-Report') is None:
                 delivery_report = False
