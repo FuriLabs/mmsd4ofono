@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: GPL-2.0-or-later
+# SPDX-License-Identifier: GPL-2.0
 # Copyright (C) 2007 Francois Aucamp <francois.aucamp@gmail.com>
 # Copyright (C) 2024 Bardia Moshiri <fakeshell@bardia.tech>
 
