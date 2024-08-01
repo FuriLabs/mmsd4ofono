@@ -798,8 +798,13 @@ class MMSEncoder(wsp_pdu.Encoder):
             # Headers
             message_body.extend(encoded_part_headers)
             # Data (note: we do not null-terminate this)
-            for char in part.data:
-                message_body.append(ord(char))
+            if isinstance(part.data, str):
+                for char in part.data:
+                    message_body.append(ord(char))
+            elif isinstance(part.data, bytes):
+                message_body.extend(int(byte) for byte in part.data)
+            else:
+                raise TypeError(f"Unsupported data type: {type(part.data)}")
 
         return message_body
 

@@ -532,8 +532,12 @@ class DataPart:
             return self._data
 
         elif self._filename is not None:
-            with open(self._filename, 'r') as f:
+            mime_type, _ = mimetypes.guess_type(self._filename)
+            is_binary = mime_type is None or not mime_type.startswith('text')
+            mode = 'rb' if is_binary else 'r'
+            with open(self._filename, mode) as f:
                 self._data = f.read()
+
             return self._data
 
         return ''
