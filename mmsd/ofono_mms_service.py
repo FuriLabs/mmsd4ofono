@@ -71,17 +71,33 @@ class OfonoMMSServiceInterface(ServiceInterface):
 
         mms.headers['Content-Type'] = ('application/vnd.wap.multipart.mixed', {})
 
-        text_content = None
         for attachment in attachments:
-            if attachment[1] == 'text/plain':
-                with open(attachment[2], 'r') as file:
-                    text_content = file.read()
-                break
-
-        if text_content:
-            text_slide = MMSMessagePage()
-            text_slide.add_text(text_content)
-            mms.add_page(text_slide)
+            type = attachment[1].split('/')[0]
+            if type == 'text':
+                try:
+                    with open(attachment[2], 'r') as file:
+                        text_content = file.read()
+                        text_slide = MMSMessagePage()
+                        text_slide.add_text(text_content)
+                        mms.add_page(text_slide)
+                except Exception as e:
+                    mmsd_print(f"Failed to process text attachment: {e}", self.verbose)
+            elif type == 'image':
+                try:
+                    image_slide = MMSMessagePage()
+                    image_slide.add_image(attachment[2])
+                    mms.add_page(image_slide)
+                except Exception as e:
+                    mmsd_print(f"Failed to process image attachment: {e}", self.verbose)
+            elif type == 'audio':
+                try:
+                    image_slide = MMSMessagePage()
+                    image_slide.add_image(attachment[2])
+                    mms.add_page(image_slide)
+                except Exception as e:
+                    mmsd_print(f"Failed to process audio attachment: {e}", self.verbose)
+            else:
+                mmsd_print(f"Attachment type {type} not supported, skipping", self.verbose)
 
         payload = mms.encode()
         smil = ''.join(mms.smil().split())
