@@ -51,6 +51,11 @@ class OfonoPushNotification(ServiceInterface):
             mmsd_print(f"Agent already registered at path {path}", self.verbose)
             return
 
+        sim_present = self.ofono_interface_props['org.ofono.SimManager']['Present'].value
+        if not sim_present:
+            mmsd_print(f"No SIM present at modem {self.modem_name}", self.verbose)
+            return
+
         while True:
             try:
                 await self.ofono_interfaces['org.ofono.PushNotification'].call_register_agent(path)
