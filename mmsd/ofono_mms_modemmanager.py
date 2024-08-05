@@ -109,7 +109,7 @@ class OfonoMMSModemManagerInterface(ServiceInterface):
         mmsd_print(f"Changing setting {setting} to {value}", self.verbose)
         if setting in self.props:
             self.props[setting] = value
-            await self.save_settings_to_file()
+            self.save_settings_to_file()
 
     @method()
     async def ChangeAllSettings(self, options: 'a{sv}'):
