@@ -54,9 +54,9 @@ class OfonoMMSModemManagerInterface(ServiceInterface):
                     proxy = ctx[1].get('MessageProxy', Variant('s', '')).value
                     mmsc = ctx[1].get('MessageCenter', Variant('s', '')).value
 
-                    self.props['CarrierMMSC']= Variant('s', mmsc)
-                    self.props['MMS_APN']= Variant('s', apn)
-                    self.props['CarrierMMSProxy']= Variant('s', proxy)
+                    self.props['CarrierMMSC'] = Variant('s', mmsc)
+                    self.props['MMS_APN'] = Variant('s', apn)
+                    self.props['CarrierMMSProxy'] = Variant('s', proxy)
         self.SettingsChanged(apn, mmsc, proxy)
         self.save_settings_to_file()
 
@@ -104,12 +104,25 @@ class OfonoMMSModemManagerInterface(ServiceInterface):
         mmsd_print("View settings", self.verbose)
         return self.props
 
+    async def update_mms_context(self):
+        if 'org.ofono.ConnectionManager' in self.ofono_interface_props:
+            contexts = await self.ofono_interfaces['org.ofono.ConnectionManager'].call_get_contexts()
+            for ctx in contexts:
+                ctx_type = ctx[1].get('Type', Variant('s', '')).value
+                if ctx_type.lower() == "mms":
+                    ctx_interface = self.ofono_client["ofono_context"][ctx[0]]['org.ofono.ConnectionContext']
+                    await ctx_interface.call_set_property("AccessPointName", Variant('s', self.props['MMS_APN'].value))
+                    await ctx_interface.call_set_property("MessageProxy", Variant('s', self.props['CarrierMMSProxy'].value))
+                    await ctx_interface.call_set_property("MessageCenter", Variant('s', self.props['CarrierMMSC'].value))
+
     @method()
     async def ChangeSettings(self, setting: 's', value: 'v'):
-        mmsd_print(f"Changing setting {setting} to {value}", self.verbose)
+        mmsd_print(f"Changing setting {setting} to {value.value}", self.verbose)
+
         if setting in self.props:
             self.props[setting] = value
             self.save_settings_to_file()
+        await self.update_mms_context()
 
     @method()
     async def ChangeAllSettings(self, options: 'a{sv}'):
@@ -173,5 +186,4 @@ class OfonoMMSModemManagerInterface(ServiceInterface):
             if iface in self.ofono_interface_props:
                 self.ofono_interface_props[iface][name] = varval
             asyncio.create_task(self.set_props())
-
         return ch
