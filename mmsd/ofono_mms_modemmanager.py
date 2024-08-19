@@ -124,6 +124,11 @@ class OfonoMMSModemManagerInterface(ServiceInterface):
             self.save_settings_to_file()
         await self.update_mms_context()
 
+        apn = self.props['MMS_APN'].value
+        mmsc = self.props['CarrierMMSC'].value
+        proxy = self.props['CarrierMMSProxy'].value
+        self.SettingsChanged(apn, mmsc, proxy)
+
     @method()
     async def ChangeAllSettings(self, options: 'a{sv}'):
         mmsd_print(f"Changing settings {options}", self.verbose)
@@ -131,6 +136,11 @@ class OfonoMMSModemManagerInterface(ServiceInterface):
             if setting in self.props:
                 self.props[setting] = value
         self.save_settings_to_file()
+
+        apn = self.props['MMS_APN'].value
+        mmsc = self.props['CarrierMMSC'].value
+        proxy = self.props['CarrierMMSProxy'].value
+        self.SettingsChanged(apn, mmsc, proxy)
 
     @method()
     async def ProcessMessageQueue(self):
