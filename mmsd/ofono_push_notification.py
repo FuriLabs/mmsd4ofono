@@ -176,8 +176,12 @@ class OfonoPushNotification(ServiceInterface):
                                             if smil_src is None:
                                                 num_attachments = len(mms_smil.data_parts)
                                         else:
-                                            attachment_info = [f'<{smil_src[index-1]}>', part.content_type, attachment_path, 0, len(part.data)]
-                                            status_data['attachments'].append(attachment_info)
+                                            if smil_src:
+                                                attachment_info = [f'<{smil_src[index-1]}>', part.content_type, attachment_path, 0, len(part.data)]
+                                                status_data['attachments'].append(attachment_info)
+                                            else:
+                                                attachment_info = [f'<1>', part.content_type, attachment_path, 0, len(part.data)] # content types like vcard
+                                                status_data['attachments'].append(attachment_info)
 
                             export_entries[basename] = status_data
 
@@ -255,8 +259,12 @@ date={sent_time}"""
                 if smil_src is None:
                     num_attachments = len(mms_smil.data_parts)
             else:
-                attachment_info = [f'<{smil_src[index-1]}>', part.content_type, attachment_path, 0, len(part.data)]
-                attachments.append(attachment_info)
+                if smil_src:
+                    attachment_info = [f'<{smil_src[index-1]}>', part.content_type, attachment_path, 0, len(part.data)]
+                    attachments.append(attachment_info)
+                else:
+                    attachment_info = [f'<1>', part.content_type, attachment_path, 0, len(part.data)] # content types like vcard
+                    attachments.append(attachment_info)
 
         if smil_data:
             sender_number = sender.split('/')[0]
