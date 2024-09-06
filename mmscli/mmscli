@@ -7,7 +7,13 @@ import argparse
 from array import array
 from os import makedirs
 from random import choice
+from sys import path
+from os.path import realpath, join, dirname
 from string import ascii_letters, digits
+
+topdir = realpath(join(dirname(__file__) + "/.."))
+path.insert(0, topdir)
+
 from mmsdecoder.message import MMSMessage, MMSMessagePage
 
 def decode_mms_file(file_path, out_dir):
