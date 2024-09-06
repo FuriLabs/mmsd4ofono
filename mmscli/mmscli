@@ -14,6 +14,9 @@ from string import ascii_letters, digits
 topdir = realpath(join(dirname(__file__) + "/.."))
 path.insert(0, topdir)
 
+mmsd_dir = "/usr/lib/mmsd"
+path.insert(0, mmsd_dir)
+
 from mmsdecoder.message import MMSMessage, MMSMessagePage
 
 def decode_mms_file(file_path, out_dir):
