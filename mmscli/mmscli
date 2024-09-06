@@ -1,0 +1,168 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2024 Bardia Moshiri <fakeshell@bardia.tech>
+
+import dbus
+import argparse
+from array import array
+from os import makedirs
+from random import choice
+from string import ascii_letters, digits
+from mmsdecoder.message import MMSMessage, MMSMessagePage
+
+def decode_mms_file(file_path, out_dir):
+    data = array("B", open(file_path, 'rb').read())
+
+    mms = MMSMessage.from_data(data)
+
+    print("MMS Headers:")
+    for key, value in mms.headers.items():
+        print(f"{key}: {value}")
+
+    makedirs(out_dir, exist_ok=True)
+    for index, part in enumerate(mms.data_parts):
+       type = part.content_type.split('/')[0]
+       output_file = None
+       if type == "application":
+           output_file = f"{type}.{index}.bin"
+       if type == "text":
+           output_file = f"{type}.{index}.txt"
+       if type == "image":
+           output_file = f"{type}.{index}.image"
+       if type == "audio":
+           output_file = f"{type}.{index}.audio"
+
+       if output_file:
+           with open(f"{out_dir}/{output_file}", 'wb') as file:
+               file.write(part.data)
+
+def generate_random_string(length=8):
+    characters = ascii_letters + digits
+    random_string = ''.join(choice(characters) for _ in range(length))
+    return random_string.upper()
+
+def build_message(image, audio, text, receiver, sender):
+    mms = MMSMessage()
+
+    attachments = []
+    mms.headers['From'] = f"{sender}/TYPE=PLMN"
+
+    recipients = [f'{receiver}/TYPE=PLMN']
+    mms.headers['To'] = recipients
+    mms.headers['Message-Type'] = 'm-send-req'
+    mms.headers['MMS-Version'] = '1.1'
+
+    id = generate_random_string()
+    mms.headers['Transaction-Id'] = id
+    mms.headers['Message-ID'] = id
+
+    mms.headers['Content-Type'] = ('application/vnd.wap.multipart.mixed', {})
+
+    if text:
+        try:
+            with open(text, 'r') as file:
+                text_content = file.read()
+                text_slide = MMSMessagePage()
+                text_slide.add_text(text_content)
+                mms.add_page(text_slide)
+        except Exception as e:
+            print(f"Failed to process text attachment: {e}")
+    if image:
+        try:
+            image_slide = MMSMessagePage()
+            image_slide.add_image(image)
+            mms.add_page(image_slide)
+        except Exception as e:
+            print(f"Failed to process image attachment: {e}")
+    if audio:
+        try:
+            audio_slide = MMSMessagePage()
+            audio_slide.add_audio(audio)
+            mms.add_page(audio_slide)
+        except Exception as e:
+            print(f"Failed to process audio attachment: {e}")
+
+    payload = mms.encode()
+    smil = ''.join(mms.smil().split())
+
+    return payload
+
+def encode_mms_message(out_file, image, audio, text, receiver, sender):
+   payload = build_message(image, audio, text, receiver, sender)
+   with open(out_file, 'wb') as file:
+       file.write(payload)
+
+def action_info():
+    try:
+        bus = dbus.SessionBus()
+
+        manager = dbus.Interface(bus.get_object('org.ofono.mms', '/org/ofono/mms'),
+                                 'org.ofono.mms.Manager')
+
+        services = manager.GetServices()
+        for entry in services:
+            path = entry[0]
+            properties = entry[1]
+
+            print("[ {} ]".format(path))
+
+            for key, val in properties.items():
+                print("    {} = {}".format(key, str(val)))
+
+            service = dbus.Interface(bus.get_object('org.ofono.mms', path),
+                                     'org.ofono.mms.Service')
+            properties = service.GetProperties()
+
+            for key, val in properties.items():
+                print("    {} = {}".format(key, str(val)))
+    except Exception as e:
+        print(f"Failed to get MMS daemon info: {e}")
+
+def main():
+    parser = argparse.ArgumentParser(description="MMS control tool")
+    sub = parser.add_subparsers(title="action", dest="action")
+    sub.add_parser('info', help="Show info about mmsd")
+
+    parser_decode = sub.add_parser('decode', help="Decode a PDU")
+    parser_decode.add_argument('--file', '-f', help="File name to decode")
+    parser_decode.add_argument('--out', '-o', help="Output directory for data parts")
+
+    parser_encode = sub.add_parser('encode', help="Generate a PDU")
+    parser_encode.add_argument('--image', help="Image file to append to the PDU")
+    parser_encode.add_argument('--audio', help="Audio file to append to the PDU")
+    parser_encode.add_argument('--text', help="Text file to append to the PDU")
+    parser_encode.add_argument('--file', '-f', help="File to save the encoded PDU")
+    parser_encode.add_argument('--sender', help="Sender of the PDU")
+    parser_encode.add_argument('--receiver', help="Receiver of the PDU")
+
+    args = parser.parse_args()
+
+    if args.action is None or args.action == "info":
+        action_info()
+        return
+
+    if args.action == "decode":
+        if not args.file:
+            print("No PDU file is provided")
+            return
+        if not args.out:
+            print("No output directory is provided")
+            return
+        decode_mms_file(args.file, args.out)
+        return
+
+    if args.action == "encode":
+        if not args.file:
+            print("No output file is provided")
+            return
+        if not args.receiver:
+            print("No receiver is provided")
+            return
+        if not args.sender:
+            print("No sender is provided")
+            return
+        encode_mms_message(args.file, args.image, args.audio, args.text, args.receiver, args.sender)
+        return
+
+if __name__ == '__main__':
+    main()
