@@ -112,6 +112,11 @@ class OfonoMMSServiceInterface(ServiceInterface):
             try:
                 mmsc = self.ofono_mms_modemmanager_interface.props['CarrierMMSC'].value
                 proxy = self.ofono_mms_modemmanager_interface.props['CarrierMMSProxy'].value
+
+                if ':' not in proxy:
+                    # Since it's an HTTP proxy we can default to port 80
+                    proxy += ':80'
+
                 gw_host, gw_port = proxy.split(':')
                 gw_port = int(gw_port)
 
