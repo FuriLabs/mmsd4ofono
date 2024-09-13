@@ -46,19 +46,8 @@ class CachedClient:
                 self.cache[hash(introspection)] = f.read()
 
     def get_interface(self, introspection, path, interface):
-        path_hashed = hash(path)
-        interface_hashed = hash(path + interface)
-
-        if not interface_hashed in self.cache:
-            if not path_hashed in self.cache:
-                self.cache[path_hashed] = self.bus.get_proxy_object(self.bus_name, path, self.cache[hash(introspection)])
-
-            try:
-                self.cache[interface_hashed] = self.cache[path_hashed].get_interface(interface)
-            except Exception:
-                self.cache[interface_hashed] = None  # skip over org.ofono.IpMultimediaSystem
-
-        return self.cache[interface_hashed]
+        proxy_object = self.bus.get_proxy_object(self.bus_name, path, self.cache[hash(introspection)])
+        return proxy_object.get_interface(interface)
 
     def __getitem__(self, introspection):
         """
