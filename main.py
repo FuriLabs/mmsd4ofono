@@ -3,6 +3,7 @@
 # Copyright (C) 2024 Bardia Moshiri <fakeshell@bardia.tech>
 
 import asyncio
+import sys
 from os import environ
 from argparse import ArgumentParser
 from os.path import expanduser
@@ -624,6 +625,10 @@ def custom_help(parser):
     print("\nMultimedia Messaging Service Daemon")
 
 async def main():
+    # Disable buffering for stdout and stderr so that logs are written immediately
+    sys.stdout.reconfigure(line_buffering=True)
+    sys.stderr.reconfigure(line_buffering=True)
+
     parser = ArgumentParser(description="Run the MMSD interface.", add_help=False)
     parser.add_argument('-v', '--verbose', action='store_true', help='Enable verbose output.')
     parser.add_argument('-V', '--version', action='store_true', help='Print version.')
