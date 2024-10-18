@@ -48,6 +48,7 @@ mms_field_names = {
     0x16: ('Subject', 'encoded_string_value'),
     0x17: ('To', 'encoded_string_value'),
     0x18: ('Transaction-Id', 'text_string'),
+    0x19: ('MMS-Retrieve-Status', 'mms_retrieve_status_value'),
 }
 
 
@@ -496,6 +497,36 @@ class MMSDecoder(wsp_pdu.Decoder):
         byte = next(byte_iter)
         value = 'Hide' if byte == 128 else 'Show'
         return value
+    
+    @staticmethod
+    def decode_mms_retrieve_status_value(byte_iter):
+        """
+        Decodes the "MMS-Retrieve-Status" value pointed by ``byte_iter``
+
+        Defined in [4], section 7.3.50
+
+        :raise wsp_pdu.DecodeError: The MMS retrieve status value could not be
+                                    parsed. ``byte_iter`` will not be modified in
+                                    this case.
+
+        :return: The decoded MMS retrieve status value
+        :rtype: str
+        """
+        mms_retrieve_status_values = {
+            0x80: 'Ok',
+            0xC0: 'Error-transient-failure',
+            0xC1: 'Error-transient-message-not-found',
+            0xC2: 'Error-transient-network-problem',
+            0xE0: 'Error-permanent-failure',
+            0xE1: 'Error-permanent-service-denied',
+            0xE2: 'Error-permanent-message-not-found',
+            0xE3: 'Error-permanent-content-unsupported',
+        }
+
+        byte = byte_iter.preview()
+        next(byte_iter)
+        # Return error unspecified if it couldn't be decoded
+        return mms_retrieve_status_values.get(byte, 'error-unspecified')
 
     @staticmethod
     def decode_response_status_value(byte_iter):
