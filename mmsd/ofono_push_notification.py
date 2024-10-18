@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0
 # Copyright (C) 2024 Bardia Moshiri <fakeshell@bardia.tech>
 
+from aiohttp import ClientSession, TCPConnector
 from os.path import join, exists, splitext
-from aiohttp import ClientSession
 from array import array
 from uuid import uuid4
 from re import sub, compile
@@ -38,8 +38,8 @@ class OfonoPushNotification(ServiceInterface):
     async def retry_failed_requests(self):
         while True:
             transaction_id, content_location, sender, info = await self.retry_queue.get()
-            proxy = await self.get_mms_context_info()
-            response_content = await self.fetch_mms_content(content_location, proxy)
+            proxy, gateway = await self.get_mms_context_info()
+            response_content = await self.fetch_mms_content(content_location, proxy, gateway)
             if response_content:
                 await self.process_mms_content(response_content, transaction_id, content_location, sender, info)
             else:
@@ -101,8 +101,8 @@ class OfonoPushNotification(ServiceInterface):
             mmsd_print("Content location is None, is this even MMS? skipping", self.verbose)
             return
 
-        proxy = await self.get_mms_context_info()
-        response_content = await self.fetch_mms_content(content_location, proxy)
+        proxy, gateway = await self.get_mms_context_info()
+        response_content = await self.fetch_mms_content(content_location, proxy, gateway)
         if response_content:
             await self.process_mms_content(response_content, transaction_id, content_location, sender, info)
         else:
@@ -189,28 +189,25 @@ class OfonoPushNotification(ServiceInterface):
             mmsd_print(f"re-exporting old message {basename}", self.verbose)
             self.export_mms_message(basename, entry['state'], entry['date'], entry['sender'], entry['delivery_report'], [], entry['smil_data'], entry['attachments'])
 
-    async def fetch_mms_content(self, url, proxy):
-        async with ClientSession() as session:
+    async def fetch_mms_content(self, url, proxy, gateway):
+        connector = TCPConnector(local_addr=(gateway, 0) if gateway else None)
+
+        request_kwargs = {}
+        if proxy:
+            request_kwargs['proxy'] = f"http://{proxy}"
+
+        async with ClientSession(connector=connector) as session:
             try:
-                mmsd_print(f"Fetching URL: {url} using proxy: {proxy}", self.verbose)
-                if proxy:
-                    async with session.get(url, proxy=f"http://{proxy}") as response:
-                        mmsd_print(f"Response status: {response.status}", self.verbose)
-                        if response.status == 200:
-                            content = await response.read()
-                            mmsd_print(f"Content length: {len(content)}", self.verbose)
-                            return content
-                        else:
-                            mmsd_print(f"Failed to fetch content. HTTP status: {response.status}", self.verbose)
-                else:
-                    async with session.get(url) as response:
-                        mmsd_print(f"Response status: {response.status}", self.verbose)
-                        if response.status == 200:
-                            content = await response.read()
-                            mmsd_print(f"Content length: {len(content)}", self.verbose)
-                            return content
-                        else:
-                            mmsd_print(f"Failed to fetch content. HTTP status: {response.status}", self.verbose)
+                mmsd_print(f"Fetching URL: {url} using proxy: {proxy} and gateway: {gateway}", self.verbose)
+
+                async with session.get(url, **request_kwargs) as response:
+                    mmsd_print(f"Response status: {response.status}", self.verbose)
+                    if response.status == 200:
+                        content = await response.read()
+                        mmsd_print(f"Content length: {len(content)}", self.verbose)
+                        return content
+                    else:
+                        mmsd_print(f"Failed to fetch content. HTTP status: {response.status}", self.verbose)
             except Exception as e:
                 mmsd_print(f"Failed to download SMIL: {e}", self.verbose)
             return None
@@ -284,13 +281,19 @@ date={sent_time}"""
 
     async def get_mms_context_info(self):
         proxy = ''
+        gateway = ''
         if 'org.ofono.ConnectionManager' in self.ofono_interfaces:
             contexts = await self.ofono_interfaces['org.ofono.ConnectionManager'].call_get_contexts()
             for ctx in contexts:
                 name = ctx[1].get('Type', Variant('s', '')).value
                 if name.lower() == "mms":
                     proxy = ctx[1]['MessageProxy'].value
-        return proxy
+
+                    settings = ctx[1]['Settings'].value
+                    if 'Gateway' in settings:
+                        gateway = settings['Gateway'].value
+
+        return proxy, gateway
 
     def extract_smil_src(self, xml_string):
         src_pattern = compile(r'<(\w+)\s+[^>]*src="([^"]*)"[^>]*>')
