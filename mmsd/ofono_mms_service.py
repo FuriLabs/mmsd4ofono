@@ -144,7 +144,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
                 break
             except Exception as e:
                 mmsd_print(f"Error sending message: {str(e)}. Retrying...", self.verbose)
-                asyncio.sleep(5)
+                sleep(5)
 
     def set_props(self):
         mmsd_print("Setting properties", self.verbose)
