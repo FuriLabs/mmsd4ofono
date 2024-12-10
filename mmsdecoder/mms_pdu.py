@@ -110,6 +110,17 @@ class MMSDecoder(wsp_pdu.Decoder):
         """
         data_iter = PreviewIterator(self._mms_data)
 
+        # Since the MMS might be wrapped in a WSP PDU, we need to check for that
+        # and skip the WSP headers if they are present. "Lucky" for us, we can know
+        # whether we're looking at a WSP PDU by checking the SECOND byte of the data.
+        # Not the first. That's the transaction ID or something. The second one. Yeah.
+        # Anyway, if it's 0x06, then we know it's a PDU, and the byte right after that
+        # is the length of the headers. So we skip that many bytes.)
+        (second_byte, wsp_headers_len) = self._mms_data[1:3]
+
+        if second_byte == 0x06:
+            data_iter = PreviewIterator(self._mms_data[3 + wsp_headers_len:])
+
         # First 3  headers (in order
         ############################
         # - X-Mms-Message-Type
