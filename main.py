@@ -224,15 +224,6 @@ class OfonoMMSManagerInterface(ServiceInterface):
             self.ofono_proxy['org.ofono.Modem'].on_property_changed(self.ofono_changed)
             await self.init_ofono_interfaces()
 
-            contexts = await self.ofono_interfaces['org.ofono.ConnectionManager'].call_get_contexts()
-            for ctx in contexts:
-                name = ctx[1].get('Type', Variant('s', '')).value
-                if name.lower() == "mms":
-                    ctx_path = ctx[0]
-                    ctx_interface = self.ofono_client["ofono_context"][ctx_path]['org.ofono.ConnectionContext']
-                    await self.force_activate_context()
-                    ctx_interface.on_property_changed(self.context_active_changed)
-
             if "/org/ofono/mms" not in self.ofono_mms_objects:
                 self.ofono_mms_modemmanager_interface = OfonoMMSModemManagerInterface(self.ofono_client, self.ofono_props, self.ofono_interfaces, self.ofono_interface_props, self.mms_dir, path, self.verbose)
                 self.session_bus.export('/org/ofono/mms', self.ofono_mms_modemmanager_interface)
@@ -261,6 +252,8 @@ class OfonoMMSManagerInterface(ServiceInterface):
             except Exception as e:
                 mmsd_print(f"Failed to export old messages: {e}", self.verbose)
 
+            self.loop.create_task(self.setup_mms_context_monitoring())
+
             self.modem_added_block = False
             self.already_exported = True
         except asyncio.CancelledError:
@@ -269,6 +262,20 @@ class OfonoMMSManagerInterface(ServiceInterface):
         finally:
             if path in self.export_new_modem_tasks:
                 del self.export_new_modem_tasks[path]
+
+    async def setup_mms_context_monitoring(self):
+        mmsd_print("Setting up mms context", self.verbose)
+        try:
+            contexts = await self.ofono_interfaces['org.ofono.ConnectionManager'].call_get_contexts()
+            for ctx in contexts:
+                name = ctx[1].get('Type', Variant('s', '')).value
+                if name.lower() == "mms":
+                    ctx_path = ctx[0]
+                    ctx_interface = self.ofono_client["ofono_context"][ctx_path]['org.ofono.ConnectionContext']
+                    await self.force_activate_context()
+                    ctx_interface.on_property_changed(self.context_active_changed)
+        except Exception as e:
+            mmsd_print(f"Failed to set up MMS context monitoring: {e}", self.verbose)
 
     def export_mms_message(self, uuid, status, date, sender, delivery_report, recipients, smil, attachments):
         ofono_mms_message = OfonoMMSMessageInterface(self.mms_dir, uuid, self.delete_mms_message, self.verbose)
