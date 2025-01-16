@@ -44,6 +44,8 @@ class OfonoMMSManagerInterface(ServiceInterface):
         self.ofono_mms_modemmanager_interface = False
         self.ofono_push_notification_interface = False
         self.already_exported = False
+        self.activation_task = None
+        self.context_property_setting = False
         self.home = expanduser("~")
         self.mms_dir = expanduser("~/.mms/modemmanager")
         makedirs(self.mms_dir, exist_ok=True)
@@ -79,6 +81,12 @@ class OfonoMMSManagerInterface(ServiceInterface):
             "org.ofono.SimManager"
         }
 
+        self.ALLOWED_MMS_PROPERTIES = {
+            'AccessPointName',
+            'MessageProxy',
+            'MessageCenter'
+        }
+
         self.props = {
             'services': [
                 ['/org/ofono/mms/modemmanager', {'Identity': Variant('s', 'modemmanager')}]
@@ -96,6 +104,75 @@ class OfonoMMSManagerInterface(ServiceInterface):
                 mmsd_print(f"Failed to get services: {e}", self.verbose)
 
         return self.props['services']
+
+    async def mms_set_properties(self, properties):
+        retries = 0
+        max_retries = 10
+
+        while retries < max_retries:
+            try:
+                # Cancel any ongoing activation task
+                if self.activation_task and not self.activation_task.done():
+                    mmsd_print("Cancelling ongoing activation task", self.verbose)
+                    self.activation_task.cancel()
+                    try:
+                        await self.activation_task
+                    except asyncio.CancelledError:
+                        pass
+
+                self.context_property_setting = True
+                contexts = await self.ofono_interfaces['org.ofono.ConnectionManager'].call_get_contexts()
+                mms_ctx = None
+
+                for ctx in contexts:
+                    type_value = ctx[1].get('Type', Variant('s', '')).value
+                    if type_value.lower() == "mms":
+                        mms_ctx = ctx
+                        break
+
+                if not mms_ctx:
+                    mmsd_print("No MMS context found", self.verbose)
+                    return
+
+                ctx_path = mms_ctx[0]
+                ctx_interface = self.ofono_client["ofono_context"][ctx_path]['org.ofono.ConnectionContext']
+
+                mmsd_print("Deactivating MMS context before setting properties", self.verbose)
+                await ctx_interface.call_set_property("Active", Variant('b', False))
+
+                for property, value in properties.items():
+                    await ctx_interface.call_set_property(property, Variant('s', value))
+
+                # Success - start reactivation and return
+                self.activation_task = self.loop.create_task(self.force_activate_context())
+                return
+            except Exception as e:
+                if "Operation already in progress" in str(e):
+                    retries += 1
+                    mmsd_print(f"Operation in progress, retry {retries}/{max_retries}", self.verbose)
+                    await asyncio.sleep(1)
+                else:
+                    raise
+
+            finally:
+                self.context_property_setting = False
+
+        mmsd_print("Properties setting completed", self.verbose)
+
+    @method()
+    async def SetMMSContextProperty(self, property: 's', value: 's') -> None:
+        if property not in self.ALLOWED_MMS_PROPERTIES:
+            raise ValueError(f"Property {property} is not allowed. Allowed properties are: {', '.join(self.ALLOWED_MMS_PROPERTIES)}")
+
+        await self.mms_set_properties({property: value})
+
+    @method()
+    async def SetMMSContextProperties(self, properties: 'a{ss}') -> None:
+        for property in properties.keys():
+            if property not in self.ALLOWED_MMS_PROPERTIES:
+                raise ValueError(f"Property {property} is not allowed. Allowed properties are: {', '.join(self.ALLOWED_MMS_PROPERTIES)}")
+
+        await self.mms_set_properties(properties)
 
     @signal()
     def ServiceAdded(self, path: 'o', properties: 'a{sv}') -> 'oa{sv}':
@@ -272,7 +349,7 @@ class OfonoMMSManagerInterface(ServiceInterface):
                 if name.lower() == "mms":
                     ctx_path = ctx[0]
                     ctx_interface = self.ofono_client["ofono_context"][ctx_path]['org.ofono.ConnectionContext']
-                    await self.force_activate_context()
+                    self.activation_task = self.loop.create_task(self.force_activate_context())
                     ctx_interface.on_property_changed(self.context_active_changed)
         except Exception as e:
             mmsd_print(f"Failed to set up MMS context monitoring: {e}", self.verbose)
@@ -329,9 +406,16 @@ class OfonoMMSManagerInterface(ServiceInterface):
     async def force_activate_context(self):
         while True:
             try:
+                if hasattr(self, 'context_property_setting') and self.context_property_setting:
+                    mmsd_print("Property setting in progress, stopping activation", self.verbose)
+                    return
+
                 ret = await self.activate_mms_context()
                 if ret == True:
                     return
+            except asyncio.CancelledError:
+                mmsd_print("Force activate context task cancelled", self.verbose)
+                raise
             except Exception as e:
                 mmsd_print(f"Failed to activate context: {e}", self.verbose)
 
@@ -339,10 +423,12 @@ class OfonoMMSManagerInterface(ServiceInterface):
 
     async def context_active_changed(self, property, propvalue):
         mmsd_print(f"property: {property}, value: {propvalue}", self.verbose)
-        if property == "Active":
+        if property == "Active" and not self.context_property_setting:
             if propvalue.value == False:
                 mmsd_print("oFono MMS connection dropped while we still need it, reactivating context", self.verbose)
-                await self.force_activate_context()
+                if self.activation_task and not self.activation_task.done():
+                    self.activation_task.cancel()
+                self.activation_task = self.loop.create_task(self.force_activate_context())
 
     async def activate_mms_context(self):
         try:
