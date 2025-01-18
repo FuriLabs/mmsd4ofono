@@ -15,7 +15,6 @@ from dbus_next.constants import PropertyAccess
 from dbus_next import DBusError, BusType, Variant
 
 from mmsd import OfonoMMSServiceInterface, OfonoMMSModemManagerInterface, OfonoMMSMessageInterface, OfonoPushNotification, Ofono, DBus
-from mmsd.utils import async_locked
 from mmsd.logging import mmsd_print
 
 from mmsdecoder.message import MMSMessage
@@ -207,11 +206,8 @@ class OfonoMMSManagerInterface(ServiceInterface):
         mmsd_print("oFono removed", self.verbose)
         self.ofono_manager_interface = None
 
-    @async_locked
     async def find_ofono_modems(self):
         mmsd_print("Finding oFono modems", self.verbose)
-
-        global has_bus
 
         if not self.ofono_manager_interface:
             mmsd_print("oFono manager interface is empty, skipping", self.verbose)
@@ -219,7 +215,11 @@ class OfonoMMSManagerInterface(ServiceInterface):
 
         self.ofono_modem_list = False
         self.modem_added_block = True
-        while not self.ofono_modem_list:
+        attempts = 0
+        max_attempts = 5
+        modem = None
+        modem_interfaces = None
+        while not self.ofono_modem_list and attempts < max_attempts:
             try:
                 if self.ofono_manager_interface is None:
                     mmsd_print("oFono manager interface is not initialized properly. skipping", self.verbose)
@@ -238,34 +238,59 @@ class OfonoMMSManagerInterface(ServiceInterface):
 
                 if not self.ofono_modem_list:
                     mmsd_print("No modems available, retrying", self.verbose)
-                    await asyncio.sleep(2)
+                    attempts += 1
+                    if attempts < max_attempts:
+                        await asyncio.sleep(2)
                     continue
+
+                modem = self.ofono_modem_list[0]
 
                 modem_interfaces = set(self.ofono_modem_list[0][1]['Interfaces'].value)
                 if not self.required_interfaces.issubset(modem_interfaces):
                     mmsd_print("Required interfaces not available, retrying", self.verbose)
-                    await asyncio.sleep(2)
+                    self.ofono_modem_list = False
+                    attempts += 1
+                    if attempts < max_attempts:
+                        await asyncio.sleep(2)
+                        self.ofono_modem_list = False
                     continue
             except DBusError as e:
                 mmsd_print(f"Failed to get the current modem: {e}", self.verbose)
                 self.ofono_modem_list = False
+                attempts += 1
+                if attempts < max_attempts:
+                    await asyncio.sleep(2)
 
-        for modem in self.ofono_modem_list:
-            try:
-                self.ofono_sim_manager = self.ofono_client["ofono_modem"][modem[0]]['org.ofono.SimManager']
+        if not self.ofono_modem_list:
+            mmsd_print("Failed to initialize modem after 5 attempts", self.verbose)
+            if modem and "org.ofono.SimManager" in modem_interfaces:
+                ofono_sim_manager = self.ofono_client["ofono_modem"][modem[0]]['org.ofono.SimManager']
+                sim_props = await ofono_sim_manager.call_get_properties()
+                if 'PinRequired' in sim_props and sim_props['PinRequired'].value != 'none':
+                    mmsd_print("SIM is locked. setting a listener for unlock", self.verbose)
+                    ofono_sim_manager.on_property_changed(self.sim_property_changed)
 
-                mmsd_print(f"modem is {modem[0]}", self.verbose)
+                # export mmsd objects over dbus. even if we can't send any message, we want the object exposed over dbus
+                # if they are not exported, systemd will assume service has failed and it will restart it.
+                # exporting it early really doesn't change anything since there is no logic bound to ofono in any of the interfaces initialization
+                self.loop.create_task(self.export_mmsd_objects(modem[0]))
+            return
 
-                task = self.loop.create_task(self.export_new_modem(modem[0], modem[1]))
-                self.export_new_modem_tasks[modem[0]] = task
-                await task
-            except DBusError as e:
-                print(f"Error interacting with modem {modem[0]}: {e}")
-                continue
+        try:
+            mmsd_print(f"modem is {modem[0]}", self.verbose)
 
-        if not has_bus and len(self.ofono_mms_objects) != 0:
-            await self.session_bus.request_name('org.ofono.mms')
-            has_bus = True
+            task = self.loop.create_task(self.export_new_modem(modem[0], modem[1]))
+            self.export_new_modem_tasks[modem[0]] = task
+            await task
+        except DBusError as e:
+            mmsd_print(f"Error interacting with modem {modem[0]}: {e}", self.verbose)
+
+    async def sim_property_changed(self, property, value):
+        mmsd_print(f"SIM property changed: property: {property}, value: {value.value}", self.verbose)
+        if property == "PinRequired":
+            if value.value == "none":
+                # sim is now unlocked, try finding the modem again
+                self.loop.create_task(self.find_ofono_modems())
 
     def dbus_name_owner_changed(self, name, old_owner, new_owner):
         if name == "org.ofono":
@@ -288,6 +313,31 @@ class OfonoMMSManagerInterface(ServiceInterface):
         except Exception as e:
             mmsd_print(f"Failed to create task for modem {path}: {e}", self.verbose)
 
+    async def export_mmsd_objects(self, path):
+        global has_bus
+
+        if "/org/ofono/mms" not in self.ofono_mms_objects:
+            self.ofono_mms_modemmanager_interface = OfonoMMSModemManagerInterface(self.ofono_client, self.ofono_props, self.ofono_interfaces, self.ofono_interface_props, self.mms_dir, path, self.verbose)
+            self.session_bus.export('/org/ofono/mms', self.ofono_mms_modemmanager_interface)
+            await self.ofono_mms_modemmanager_interface.set_props()
+            self.ofono_mms_interfaces.append(self.ofono_mms_modemmanager_interface)
+            self.ofono_mms_objects.append('/org/ofono/mms')
+        else:
+            mmsd_print("Skip exporting mms modem manager interface at /org/ofono/mms, path is already exported", self.verbose)
+
+        if self.props['services'][0][0] not in self.ofono_mms_objects:
+            self.ofono_mms_service_interface = OfonoMMSServiceInterface(self.ofono_client, self.ofono_props, self.ofono_interfaces, self.ofono_interface_props, self.mms_dir, self.ofono_mms_modemmanager_interface, self.export_mms_message, path, self.verbose)
+            self.session_bus.export(self.props['services'][0][0], self.ofono_mms_service_interface)
+            self.ofono_mms_service_interface.set_props()
+            self.ofono_mms_interfaces.append(self.ofono_mms_service_interface)
+            self.ofono_mms_objects.append(self.props['services'][0][0])
+        else:
+            mmsd_print("Skip exporting mms service interface at /org/ofono/mms/modemmanager, path is already exported", self.verbose)
+
+        if not has_bus and len(self.ofono_mms_objects) != 0:
+            await self.session_bus.request_name('org.ofono.mms')
+            has_bus = True
+
     @retry(wait=wait_fixed(3))
     async def export_new_modem(self, path, mprops):
         try:
@@ -301,23 +351,7 @@ class OfonoMMSManagerInterface(ServiceInterface):
             self.ofono_proxy['org.ofono.Modem'].on_property_changed(self.ofono_changed)
             await self.init_ofono_interfaces()
 
-            if "/org/ofono/mms" not in self.ofono_mms_objects:
-                self.ofono_mms_modemmanager_interface = OfonoMMSModemManagerInterface(self.ofono_client, self.ofono_props, self.ofono_interfaces, self.ofono_interface_props, self.mms_dir, path, self.verbose)
-                self.session_bus.export('/org/ofono/mms', self.ofono_mms_modemmanager_interface)
-                await self.ofono_mms_modemmanager_interface.set_props()
-                self.ofono_mms_interfaces.append(self.ofono_mms_modemmanager_interface)
-                self.ofono_mms_objects.append('/org/ofono/mms')
-            else:
-                mmsd_print("Skip exporting mms modem manager interface at /org/ofono/mms, path is already exported", self.verbose)
-
-            if self.props['services'][0][0] not in self.ofono_mms_objects:
-                self.ofono_mms_service_interface = OfonoMMSServiceInterface(self.ofono_client, self.ofono_props, self.ofono_interfaces, self.ofono_interface_props, self.mms_dir, self.ofono_mms_modemmanager_interface, self.export_mms_message, path, self.verbose)
-                self.session_bus.export(self.props['services'][0][0], self.ofono_mms_service_interface)
-                self.ofono_mms_service_interface.set_props()
-                self.ofono_mms_interfaces.append(self.ofono_mms_service_interface)
-                self.ofono_mms_objects.append(self.props['services'][0][0])
-            else:
-                mmsd_print("Skip exporting mms service interface at /org/ofono/mms/modemmanager, path is already exported", self.verbose)
+            await self.export_mmsd_objects(path)
 
             self.ofono_push_notification_interface = OfonoPushNotification(self.system_bus, self.ofono_client, self.ofono_props, self.ofono_interfaces, self.ofono_interface_props, self.mms_dir, self.export_mms_message, path, self.verbose)
             await self.ofono_push_notification_interface.RegisterAgent('/mmsd')
