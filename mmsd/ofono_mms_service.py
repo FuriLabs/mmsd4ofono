@@ -60,7 +60,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
         if modem_number:
             mms.headers['From'] = f"{modem_number}/TYPE=PLMN"
 
-        recipients = [sub(r'\D', '', recipient) + '/TYPE=PLMN' for recipient in recipients]
+        recipients = [sub(r'[^0-9+]', '', recipient) + '/TYPE=PLMN' for recipient in recipients]
         mms.headers['To'] = recipients
         mms.headers['Message-Type'] = 'm-send-req'
         mms.headers['MMS-Version'] = '1.1'
