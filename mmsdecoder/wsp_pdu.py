@@ -1834,17 +1834,14 @@ class Encoder:
         """
         # First try do encode it using Constrained-media encoding
         try:
-            if len(parameters):
-                raise EncodeError('Need to use '
-                                  'Content-general-form for parameters')
 
-            return Encoder.encode_constrained_media(media_type)
+            return Encoder.encode_constrained_media(media_type, parameters)
         except EncodeError:
             # Try the general form
             return Encoder.encode_content_general_form(media_type, parameters)
 
     @staticmethod
-    def encode_constrained_media(media_type):
+    def encode_constrained_media(media_type, parameters):
         """
         Encodes the constrained media ``media_type``
 
@@ -1868,10 +1865,10 @@ class Encoder:
         else:
             value = media_type
 
-        return Encoder.encode_constrained_encoding(value)
+        return Encoder.encode_constrained_encoding(value, parameters)
 
     @staticmethod
-    def encode_constrained_encoding(value):
+    def encode_constrained_encoding(value, parameters=None):
         """
         Constrained-encoding = Extension-Media  --or--  Short-integer
 
@@ -1890,17 +1887,44 @@ class Encoder:
         :rtype: list
         """
         encoded_value = None
-        if isinstance(value, int):
-            # First try and encode the value as a short-integer
-            encoded_value = Encoder.encode_short_integer(value)
+        if not parameters:
+            if isinstance(value, int):
+                # First try and encode the value as a short-integer
+                encoded_value = Encoder.encode_short_integer(value)
+            else:
+                # Ok, it should be Extension-Media then
+                try:
+                    encoded_value = Encoder.encode_extension_media(value)
+                except EncodeError:
+                    # Give up
+                    raise EncodeError('Cannot encode %s as a '
+                                    'Constrained-encoding sequence' % str(value))
         else:
-            # Ok, it should be Extension-Media then
-            try:
-                encoded_value = Encoder.encode_extension_media(value)
-            except EncodeError:
-                # Give up
-                raise EncodeError('Cannot encode %s as a '
-                                  'Constrained-encoding sequence' % str(value))
+            # Per WAP/WSP spec, 8.4.2.24:
+            # Result needs to look like Value-length Media-type Parameters
+
+            encoded_parameters = [Encoder.encode_parameter(name, parameters[name])
+                                    for name in parameters]
+            encoded_parameters = [item for sublist in encoded_parameters
+                                    for item in sublist]
+
+            value_length = len(encoded_parameters) + 1
+            encoded_value = []
+            if isinstance(value, int):
+                # First try and encode the value as a short-integer
+                encoded_value = Encoder.encode_short_integer(value)
+            else:
+                # Ok, it should be Extension-Media then
+                try:
+                    encoded_value = Encoder.encode_extension_media(value)
+                except EncodeError:
+                    # Give up
+                    raise EncodeError('Cannot encode %s as a '
+                                    'Constrained-encoding sequence' % str(value))
+            
+            value_length = len(encoded_value) + len(encoded_parameters)
+            encoded_value_length = Encoder.encode_value_length(value_length)
+            encoded_value = encoded_value_length + encoded_value + encoded_parameters
 
         return encoded_value
 
