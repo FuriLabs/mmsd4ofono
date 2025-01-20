@@ -2,21 +2,33 @@
 
 import asyncio
 import json
-import os
-import logging
-from typing import List
-import pyroute2
-from pathlib import Path
-import dbus
 import pwd
+import sys
+from argparse import ArgumentParser
+from os import chown, chmod, environ, unlink
+from os.path import realpath, join, dirname
+from pathlib import Path
+from typing import List
+
+import dbus
+import pyroute2
+
+topdir = realpath(join(dirname(__file__) + "/.."))
+sys.path.insert(0, topdir)
+
+mmsd_dir = "/usr/lib/mmsd"
+sys.path.insert(0, mmsd_dir)
+
+from mmsd.logging import mmsd_print
 
 class MMSRouteController:
-    def __init__(self):
+    def __init__(self, verbose=False):
+        mmsd_print("Initializing MMS route controller", verbose)
+        self.verbose = verbose
         self.socket_path = "/run/mmsroutectl.sock"
         self.allowed_uid = None
         self.ipr = pyroute2.IPRoute()
         self.active_routes = []
-        self.logger = logging.getLogger("mmsroutectl")
 
     def _get_mms_interface(self) -> str:
         bus = dbus.SystemBus()
@@ -38,6 +50,7 @@ class MMSRouteController:
                         return properties["IPv6.Settings"]["Interface"]
 
     async def setup_routes(self, interface: str, ips: List[str]) -> bool:
+        mmsd_print(f"Setting up route for interface: {interface} with ips: {ips}", self.verbose)
         try:
             idx = self.ipr.link_lookup(ifname=interface)[0]
 
@@ -47,7 +60,7 @@ class MMSRouteController:
             src_addr = [x.get_attr('IFA_ADDRESS') for x in addrs][0]
 
             for ip in ips:
-                self.logger.info(f"Adding route for {ip} via {interface}")
+                mmsd_print(f"Adding route for {ip} via {interface}", self.verbose)
                 self.ipr.route('add', dst=ip, oif=idx, src=src_addr)
                 self.active_routes.append({
                     'dst': ip,
@@ -55,18 +68,18 @@ class MMSRouteController:
                     'src': src_addr
                 })
             return True
-
         except Exception as e:
-            self.logger.error(f"Failed to setup routes: {e}")
+            mmsd_print(f"Failed to setup routes: {e}", self.verbose)
             self.cleanup_routes()
             return False
 
     def cleanup_routes(self):
+        mmsd_print(f"Cleaning up routes", self.verbose)
         for route in self.active_routes:
             try:
                 self.ipr.route('del', **route)
             except Exception as e:
-                self.logger.error(f"Failed to remove route: {e}")
+                mmsd_print(f"Failed to remove route: {e}", self.verbose)
 
         self.active_routes.clear()
 
@@ -84,17 +97,16 @@ class MMSRouteController:
                 self.cleanup_routes()
 
             writer.close()
-
         except Exception as e:
-            self.logger.error(f"Error handling client: {e}")
+            mmsd_print(f"Error handling client: {e}", self.verbose)
             writer.close()
 
     async def run(self):
-        socket_dir = os.path.dirname(self.socket_path)
+        socket_dir = dirname(self.socket_path)
         Path(socket_dir).mkdir(parents=True, exist_ok=True)
 
         try:
-            os.unlink(self.socket_path)
+            unlink(self.socket_path)
         except FileNotFoundError:
             pass
 
@@ -103,13 +115,28 @@ class MMSRouteController:
             path=self.socket_path
         )
 
-        os.chmod(self.socket_path, 0o660)
-        os.chown(self.socket_path, 0, pwd.getpwnam('furios').pw_uid)
+        chmod(self.socket_path, 0o660)
+        chown(self.socket_path, 0, pwd.getpwnam('furios').pw_uid)
 
         async with server:
             await server.serve_forever()
 
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    controller = MMSRouteController()
+def main():
+    # Disable buffering for stdout and stderr so that logs are written immediately
+    sys.stdout.reconfigure(line_buffering=True)
+    sys.stderr.reconfigure(line_buffering=True)
+
+    parser = ArgumentParser(description="Run the MMS route controller", add_help=False)
+    parser.add_argument('-v', '--verbose', action='store_true', help='Enable verbose output.')
+    args = parser.parse_args()
+
+    if environ.get('MODEM_DEBUG', 'false').lower() == 'true':
+        verbose = True
+    else:
+        verbose = args.verbose
+
+    controller = MMSRouteController(verbose=verbose)
     asyncio.run(controller.run())
+
+if __name__ == "__main__":
+    main()
