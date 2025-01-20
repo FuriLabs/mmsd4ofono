@@ -7,6 +7,8 @@ from array import array
 from uuid import uuid4
 from re import sub, compile
 from os import listdir
+from typing import Optional
+from urllib.parse import urlparse
 import asyncio
 
 from dbus_next.service import ServiceInterface, method, dbus_property, signal
@@ -15,6 +17,8 @@ from dbus_next import Variant, DBusError
 
 from mmsd.logging import mmsd_print
 
+from mmsd.route_controller import cleanup_mms_routes, setup_mms_routes
+from mmsd.utils import resolve_host
 from mmsdecoder.message import MMSMessage
 
 class OfonoPushNotification(ServiceInterface):
@@ -189,31 +193,81 @@ class OfonoPushNotification(ServiceInterface):
             mmsd_print(f"re-exporting old message {basename}", self.verbose)
             self.export_mms_message(basename, entry['state'], entry['date'], entry['sender'], entry['delivery_report'], [], entry['smil_data'], entry['attachments'])
 
-    async def fetch_mms_content(self, url, proxy):
-        async with ClientSession() as session:
-            try:
-                mmsd_print(f"Fetching URL: {url} using proxy: {proxy}", self.verbose)
-                if proxy:
-                    async with session.get(url, proxy=f"http://{proxy}") as response:
-                        mmsd_print(f"Response status: {response.status}", self.verbose)
-                        if response.status == 200:
-                            content = await response.read()
-                            mmsd_print(f"Content length: {len(content)}", self.verbose)
-                            return content
-                        else:
-                            mmsd_print(f"Failed to fetch content. HTTP status: {response.status}", self.verbose)
-                else:
-                    async with session.get(url) as response:
-                        mmsd_print(f"Response status: {response.status}", self.verbose)
-                        if response.status == 200:
-                            content = await response.read()
-                            mmsd_print(f"Content length: {len(content)}", self.verbose)
-                            return content
-                        else:
-                            mmsd_print(f"Failed to fetch content. HTTP status: {response.status}", self.verbose)
-            except Exception as e:
-                mmsd_print(f"Failed to download SMIL: {e}", self.verbose)
+
+    async def fetch_mms_content(self, url: str, proxy: Optional[str]):
+        needed_ips = []
+        resolved_proxy = None
+
+        if proxy:
+            proxy_host = proxy if not ':' in proxy else proxy.split(':')[0]
+            proxy_ips = await resolve_host(proxy_host)
+            if not proxy_ips:
+                mmsd_print(f"Failed to resolve proxy host: {proxy_host}", self.verbose)
+                return None
+
+            needed_ips.extend(proxy_ips)
+
+            proxy_port = '80' if not ':' in proxy else proxy.split(':')[1]
+            resolved_proxy = f"{proxy_ips[0]}:{proxy_port}"
+
+
+        if not proxy:
+            url_parts = urlparse(url)
+            url_ips = await resolve_host(url_parts.hostname)
+            if not url_ips:
+                mmsd_print(f"Failed to resolve URL host: {url_parts.hostname}", self.verbose)
+                return None
+            needed_ips.extend(url_ips)
+
+            resolved_url = url_parts._replace(
+                netloc=f"{url_ips[0]}" + (f":{url_parts.port}" if url_parts.port else "")
+            ).geturl()
+        else:
+            url_parts = urlparse(url)
+            resolved_url = url
+
+        if not await setup_mms_routes(needed_ips):
+            mmsd_print("Failed to setup MMS routes", self.verbose)
+
+            # Daemon cleans up after itself on failure, so we don't need to do anything here
             return None
+
+        try:
+            async with ClientSession() as session:
+                try:
+                    mmsd_print(f"Fetching URL: {resolved_url} using proxy: {resolved_proxy}", self.verbose)
+
+                    # Set Host header to original hostname - some carriers don't like it when you GET by IP
+                    headers = {'Host': url_parts.hostname}
+
+                    if resolved_proxy:
+                        async with session.get(
+                            resolved_url,
+                            proxy=f"http://{resolved_proxy}",
+                            headers=headers
+                        ) as response:
+                            mmsd_print(f"Response status: {response.status}", self.verbose)
+                            if response.status == 200:
+                                content = await response.read()
+                                mmsd_print(f"Content length: {len(content)}", self.verbose)
+                                return content
+                            else:
+                                mmsd_print(f"Failed to fetch content. HTTP status: {response.status}", self.verbose)
+                    else:
+                        async with session.get(resolved_url, headers=headers) as response:
+                            mmsd_print(f"Response status: {response.status}", self.verbose)
+                            if response.status == 200:
+                                content = await response.read()
+                                mmsd_print(f"Content length: {len(content)}", self.verbose)
+                                return content
+                            else:
+                                mmsd_print(f"Failed to fetch content. HTTP status: {response.status}", self.verbose)
+                except Exception as e:
+                    mmsd_print(f"Failed to download MMS content: {e}", self.verbose)
+                return None
+        finally:
+            await cleanup_mms_routes()
+
 
     async def process_mms_content(self, content, transaction_id, content_location, sender, info):
         uuid = str(uuid4()).replace('-', '1')
