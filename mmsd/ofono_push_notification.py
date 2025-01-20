@@ -200,7 +200,7 @@ class OfonoPushNotification(ServiceInterface):
 
         if proxy:
             proxy_host = proxy if not ':' in proxy else proxy.split(':')[0]
-            proxy_ips = await resolve_host(proxy_host)
+            proxy_ips = await resolve_host(proxy_host, self.verbose)
             if not proxy_ips:
                 mmsd_print(f"Failed to resolve proxy host: {proxy_host}", self.verbose)
                 return None
@@ -213,7 +213,7 @@ class OfonoPushNotification(ServiceInterface):
 
         if not proxy:
             url_parts = urlparse(url)
-            url_ips = await resolve_host(url_parts.hostname)
+            url_ips = await resolve_host(url_parts.hostname, self.verbose)
             if not url_ips:
                 mmsd_print(f"Failed to resolve URL host: {url_parts.hostname}", self.verbose)
                 return None
