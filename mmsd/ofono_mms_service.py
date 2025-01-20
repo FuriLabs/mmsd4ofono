@@ -6,7 +6,6 @@ from datetime import datetime
 from os.path import join, exists, getsize
 from string import ascii_letters, digits
 from random import choice
-from time import sleep
 from urllib.parse import urlparse
 from uuid import uuid4
 from re import sub
@@ -125,14 +124,13 @@ class OfonoMMSServiceInterface(ServiceInterface):
                     proxy_ips = await resolve_host(proxy_host)
                     if not proxy_ips:
                          mmsd_print(f"Failed to resolve proxy host: {proxy_host}", self.verbose)
-                         sleep(5)
+                         asyncio.sleep(5)
                          continue
 
                     needed_ips.extend(proxy_ips)
 
                     proxy_port = '80' if not ':' in proxy else proxy.split(':')[1]
                     resolved_proxy = f"{proxy_ips[0]}:{proxy_port}"
-                
 
                 url_parts = urlparse(mmsc)
 
@@ -140,7 +138,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
                     url_ips = await resolve_host(url_parts.hostname)
                     if not url_ips:
                         mmsd_print(f"Failed to resolve URL host: {url_parts.hostname}", self.verbose)
-                        sleep(5)
+                        asyncio.sleep(5)
                         continue
                     needed_ips.extend(url_ips)
 
@@ -153,7 +151,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
 
                 if not await setup_mms_routes(needed_ips):
                     mmsd_print("Failed to setup MMS routes, retrying...", self.verbose)
-                    sleep(5)
+                    asyncio.sleep(5)
                     continue
 
                 # payload is an array('B', [...]), convert it to bytes
@@ -193,13 +191,9 @@ class OfonoMMSServiceInterface(ServiceInterface):
 
                          mmsd_print(f"Message {uuid} sent successfully", self.verbose)
                          break
-
-
                     except Exception as e:
                         mmsd_print(f"Error sending message: {str(e)}. Retrying...", self.verbose)
-                        sleep(5)
-
-
+                        asyncio.sleep(5)
             finally:
                 await cleanup_mms_routes()
 
