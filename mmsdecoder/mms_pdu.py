@@ -1029,6 +1029,31 @@ class MMSEncoder(wsp_pdu.Encoder):
         return [message_types.get(message_type, 0x80)]
 
     @staticmethod
+    def encode_message_class_value(value):
+        """
+        Encodes the "Message-Class" value
+
+        :param value: The message class value to encode
+        :type value: str
+
+        :raise EncodeError: The specified value is not a valid message class
+
+        :return: The encoded message class value
+        :rtype: array.array('B')
+        """
+        class_identifiers = {
+            'Personal': 128,
+            'Advertisement': 129,
+            'Informational': 130,
+            'Auto': 131,
+        }
+
+        if value in class_identifiers:
+            return array.array('B', [class_identifiers[value]])
+
+        raise wsp_pdu.EncodeError('Invalid message class value: %s' % value)
+
+    @staticmethod
     def encode_status_value(status_value):
         status_values = {
             'Expired': 0x80,
