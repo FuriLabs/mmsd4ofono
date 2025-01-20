@@ -56,20 +56,20 @@ class OfonoMMSServiceInterface(ServiceInterface):
     def build_message(self, recipients, attachments):
         mms = MMSMessage()
 
-        modem_number = self.ofono_mms_modemmanager_interface.props['ModemNumber'].value
-        if modem_number:
-            mms.headers['From'] = f"{modem_number}/TYPE=PLMN"
+        # Write an empty string to From, which gets replaced by the PDU encoder to the insert-address-token
+        mms.headers['From'] = ''
 
         recipients = [sub(r'[^0-9+]', '', recipient) + '/TYPE=PLMN' for recipient in recipients]
         mms.headers['To'] = recipients
         mms.headers['Message-Type'] = 'm-send-req'
-        mms.headers['MMS-Version'] = '1.1'
+        mms.headers['MMS-Version'] = '1.2'
 
-        id = self.generate_random_string()
+        id = self.generate_random_string(length=40)
         mms.headers['Transaction-Id'] = id
-        mms.headers['Message-ID'] = id
+        mmsd_print(f"Generated transaction ID: {id}", self.verbose)
 
-        mms.headers['Content-Type'] = ('application/vnd.wap.multipart.mixed', {})
+        mms.headers['Content-Type'] = ('application/vnd.wap.multipart.related', {'Type': 'application/smil', 'Start': '<0000>'})
+        mms.headers['Message-Class'] = 'Personal'
 
         for attachment in attachments:
             type = attachment[1].split('/')[0]
