@@ -1657,8 +1657,7 @@ class Encoder:
         wk_params = get_well_known_parameters(version)
         encoded_parameter = []
         # Try to encode the parameter using a "Typed-parameter" value
-        wkParamNumbers = wk_params.keys()
-        wkParamNumbers.sort(reverse=True)
+        wkParamNumbers = sorted(wk_params.keys(), reverse=True)
         for assigned_number in wkParamNumbers:
             if wk_params[assigned_number][0] == parameter_name:
                 # Ok, it's a Typed-parameter; encode the parameter name
