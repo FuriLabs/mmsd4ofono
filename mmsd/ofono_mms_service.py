@@ -135,14 +135,15 @@ class OfonoMMSServiceInterface(ServiceInterface):
                 
 
                 url_parts = urlparse(mmsc)
-                url_ips = await resolve_host(url_parts.hostname)
-                if not url_ips:
-                    mmsd_print(f"Failed to resolve URL host: {url_parts.hostname}", self.verbose)
-                    sleep(5)
-                    continue
-                needed_ips.extend(url_ips)
 
                 if not proxy:
+                    url_ips = await resolve_host(url_parts.hostname)
+                    if not url_ips:
+                        mmsd_print(f"Failed to resolve URL host: {url_parts.hostname}", self.verbose)
+                        sleep(5)
+                        continue
+                    needed_ips.extend(url_ips)
+
                     resolved_url = url_parts._replace(
                         netloc=f"{url_ips[0]}" + (f":{url_parts.port}" if url_parts.port else "")
                     ).geturl()
