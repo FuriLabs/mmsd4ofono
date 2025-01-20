@@ -100,7 +100,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
                 mmsd_print(f"Attachment type {type} not supported, skipping", self.verbose)
 
         payload = mms.encode()
-        smil = ''.join(mms.smil().split())
+        smil = ' '.join(mms.smil().split())
 
         return mms, payload, smil, id
 
