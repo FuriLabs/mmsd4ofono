@@ -18,6 +18,7 @@ Depends: ${misc:Depends},
          python3-dbus,
          python3-aiohttp,
          python3-tenacity,
+         python3-pyroute2,
 Description: A python daemon implementing the MMSD API
 
 Package: mmsd4ofono-scripts

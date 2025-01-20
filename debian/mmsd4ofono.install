@@ -1,9 +1,11 @@
 main.py /usr/lib/mmsd
 mmsd /usr/lib/mmsd
 mmsdecoder/ /usr/lib/mmsd
+routectld/ /usr/lib/mmsd
 dbus/dbus.xml /usr/lib/mmsd
 dbus/ofono.xml /usr/lib/mmsd
 dbus/ofono_modem.xml /usr/lib/mmsd
 dbus/ofono_operator.xml /usr/lib/mmsd
 dbus/ofono_context.xml /usr/lib/mmsd
 mmsd.service /usr/lib/systemd/user/
+routectld.service /usr/lib/systemd/system/

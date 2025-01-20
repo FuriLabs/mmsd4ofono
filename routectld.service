@@ -1,0 +1,12 @@
+[Unit]
+Description=Mobile route control daemon
+After=ofono.service
+StartLimitBurst=5000
+StartLimitIntervalSec=0
+
+[Service]
+# This is not a dbus service, it just listens on a Unix socket
+Type=simple
+ExecStart=/usr/sbin/routectld
+Restart=always
+RestartSec=5s
