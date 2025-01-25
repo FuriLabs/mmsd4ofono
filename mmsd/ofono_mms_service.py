@@ -124,7 +124,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
                     proxy_ips = await resolve_host(proxy_host, self.verbose)
                     if not proxy_ips:
                          mmsd_print(f"Failed to resolve proxy host: {proxy_host}", self.verbose)
-                         asyncio.sleep(5)
+                         await asyncio.sleep(5)
                          continue
 
                     needed_ips.extend(proxy_ips)
@@ -138,7 +138,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
                     url_ips = await resolve_host(url_parts.hostname, self.verbose)
                     if not url_ips:
                         mmsd_print(f"Failed to resolve URL host: {url_parts.hostname}", self.verbose)
-                        asyncio.sleep(5)
+                        await asyncio.sleep(5)
                         continue
                     needed_ips.extend(url_ips)
 
@@ -151,7 +151,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
 
                 if not await setup_mms_routes(needed_ips):
                     mmsd_print("Failed to setup MMS routes, retrying...", self.verbose)
-                    asyncio.sleep(5)
+                    await asyncio.sleep(5)
                     continue
 
                 # payload is an array('B', [...]), convert it to bytes
@@ -193,7 +193,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
                          break
                     except Exception as e:
                         mmsd_print(f"Error sending message: {str(e)}. Retrying...", self.verbose)
-                        asyncio.sleep(5)
+                        await asyncio.sleep(5)
             finally:
                 await cleanup_mms_routes()
 
