@@ -177,7 +177,6 @@ class OfonoMMSServiceInterface(ServiceInterface):
                                  skip_auto_headers=['User-Agent']
                              ) as response:
                                 mmsd_print(f"Response status: {response.status}", self.verbose)
-                                mmsd_print(f"Response content (bytes): {await response.read()}", self.verbose)
                                 response.raise_for_status()
                          else:
                              async with session.post(
@@ -186,7 +185,6 @@ class OfonoMMSServiceInterface(ServiceInterface):
                                  data=bytes(payload)
                              ) as response:
                                  mmsd_print(f"Response status: {response.status}", self.verbose)
-                                 mmsd_print(f"Response content: {await response.text()}", self.verbose)
                                  response.raise_for_status()
 
                          mmsd_print(f"Message {uuid} sent successfully", self.verbose)
