@@ -44,21 +44,24 @@ class OfonoMMSModemManagerInterface(ServiceInterface):
                 self.props['ModemNumber'] = Variant('s', numbers[0])
                 self.props['DefaultModemNumber'] = Variant('s', numbers[0])
 
-        apn, mmsc, proxy = "", "", "NULL"
-        if 'org.ofono.ConnectionManager' in self.ofono_interface_props:
-            contexts = await self.ofono_interfaces['org.ofono.ConnectionManager'].call_get_contexts()
-            for ctx in contexts:
-                ctx_type = ctx[1].get('Type', Variant('s', '')).value
-                if ctx_type.lower() == "mms":
-                    apn = ctx[1].get('AccessPointName', Variant('s', '')).value
-                    proxy = ctx[1].get('MessageProxy', Variant('s', '')).value
-                    mmsc = ctx[1].get('MessageCenter', Variant('s', '')).value
+        try:
+            apn, mmsc, proxy = "", "", "NULL"
+            if 'org.ofono.ConnectionManager' in self.ofono_interface_props:
+                contexts = await self.ofono_interfaces['org.ofono.ConnectionManager'].call_get_contexts()
+                for ctx in contexts:
+                    ctx_type = ctx[1].get('Type', Variant('s', '')).value
+                    if ctx_type.lower() == "mms":
+                        apn = ctx[1].get('AccessPointName', Variant('s', '')).value
+                        proxy = ctx[1].get('MessageProxy', Variant('s', '')).value
+                        mmsc = ctx[1].get('MessageCenter', Variant('s', '')).value
 
-                    self.props['CarrierMMSC']= Variant('s', mmsc)
-                    self.props['MMS_APN']= Variant('s', apn)
-                    self.props['CarrierMMSProxy']= Variant('s', proxy)
-        self.SettingsChanged(apn, mmsc, proxy)
-        self.save_settings_to_file()
+                        self.props['CarrierMMSC']= Variant('s', mmsc)
+                        self.props['MMS_APN']= Variant('s', apn)
+                        self.props['CarrierMMSProxy']= Variant('s', proxy)
+            self.SettingsChanged(apn, mmsc, proxy)
+            self.save_settings_to_file()
+        except Exception as e:
+            mmsd_print(f"Failed to get oFono context info: {e}", self.verbose)
 
     def save_settings_to_file(self):
         mmsd_print(f"Saving settings to file {self.mms_config_file}", self.verbose)
