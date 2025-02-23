@@ -278,6 +278,10 @@ class OfonoMMSManagerInterface(ServiceInterface):
             return
 
         try:
+            if modem is None:
+                mmsd_print("No modem found or modem is None", self.verbose)
+                return
+
             mmsd_print(f"modem is {modem[0]}", self.verbose)
 
             task = self.loop.create_task(self.export_new_modem(modem[0], modem[1]))
