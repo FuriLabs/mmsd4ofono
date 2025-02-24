@@ -658,7 +658,11 @@ async def main():
     loop = asyncio.get_running_loop()
     ofono_mms_manager_interface = OfonoMMSManagerInterface(loop, system_bus, session_bus, verbose=verbose)
     session_bus.export('/org/ofono/mms', ofono_mms_manager_interface)
-    await session_bus.wait_for_disconnect()
+
+    try:
+        await session_bus.wait_for_disconnect()
+    except:
+        print("Session bus disconnected, exiting")
 
 if __name__ == "__main__":
     asyncio.run(main())
