@@ -555,9 +555,13 @@ class OfonoMMSManagerInterface(ServiceInterface):
         else:
             mmsd_print(f"Add oFono interface for iface {iface}", self.verbose)
 
-        self.ofono_interfaces.update({
-            iface: self.ofono_proxy[iface]
-        })
+        try:
+            self.ofono_interfaces.update({
+                iface: self.ofono_proxy[iface]
+            })
+        except Exception as e:
+            mmsd_print(f"Failed to add iface {iface}, ignoring", self.verbose)
+            return
 
         try:
             self.ofono_interface_props.update({
