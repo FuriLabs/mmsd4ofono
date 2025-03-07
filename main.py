@@ -84,7 +84,9 @@ class OfonoMMSManagerInterface(ServiceInterface):
         self.ALLOWED_MMS_PROPERTIES = {
             'AccessPointName',
             'MessageProxy',
-            'MessageCenter'
+            'MessageCenter',
+            'Username',
+            'Password'
         }
 
         self.props = {
