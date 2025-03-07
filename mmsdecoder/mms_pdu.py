@@ -320,6 +320,9 @@ class MMSDecoder(wsp_pdu.Decoder):
         try:
             # First try "Value-length Char-set Text-string"
             value_length = wsp_pdu.Decoder.decode_value_length(byte_iter)
+            if value_length == 0:
+                return ""  # What even is the point of this then?
+
             # TODO: add proper support for charsets...
             try:
                 charset = wsp_pdu.Decoder.decode_well_known_charset(byte_iter)
