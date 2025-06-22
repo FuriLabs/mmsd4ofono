@@ -155,8 +155,8 @@ class OfonoPushNotification(ServiceInterface):
 
                             smil_file = join(self.mms_dir, basename)
                             if exists(smil_file):
-                                with open(smil_file, 'rb') as smil_data:
-                                    mms_smil = MMSMessage.from_data(smil_data.read())
+                                with open(smil_file, 'rb') as smil_data_file:
+                                    mms_smil = MMSMessage.from_data(smil_data_file.read())
 
                                     if "Delivery-Report" in mms_smil.headers and mms_smil.headers['Delivery-Report']:
                                         status_data['delivery_report'] = mms_smil.headers['Delivery-Report']
@@ -168,7 +168,9 @@ class OfonoPushNotification(ServiceInterface):
                                     else:
                                         status_data['sender'] = ''
 
-                                    smil_src = len(mms_smil.data_parts)
+                                    smil_src = None
+                                    smil_data = None
+
                                     for index, part in enumerate(mms_smil.data_parts):
                                         attachment_path = join(self.mms_dir, f"{basename}.attachment.{index}")
 
@@ -177,10 +179,8 @@ class OfonoPushNotification(ServiceInterface):
                                             smil_data = part.data.decode('utf-8').replace("\n", "").replace("\r", "")
                                             status_data['smil_data'] = smil_data
                                             smil_src = self.extract_smil_src(smil_data)
-                                            if smil_src is None:
-                                                num_attachments = len(mms_smil.data_parts)
                                         else:
-                                            if smil_src:
+                                            if smil_src and isinstance(smil_src, list) and len(smil_src) > index - 1 and index > 0:
                                                 attachment_info = [f'<{smil_src[index-1]}>', part.content_type, attachment_path, 0, len(part.data)]
                                                 status_data['attachments'].append(attachment_info)
                                             else:
@@ -192,7 +192,6 @@ class OfonoPushNotification(ServiceInterface):
         for basename, entry in export_entries.items():
             mmsd_print(f"re-exporting old message {basename}", self.verbose)
             self.export_mms_message(basename, entry['state'], entry['date'], entry['sender'], entry['delivery_report'], [], entry['smil_data'], entry['attachments'])
-
 
     async def fetch_mms_content(self, url: str, proxy: Optional[str]):
         needed_ips = []
@@ -300,7 +299,9 @@ date={sent_time}"""
             mmsd_print(f"Meta info successfully saved to {status_path}", self.verbose)
 
         attachments = []
-        smil_src = len(mms_smil.data_parts)
+        smil_src = None
+        smil_data = None
+
         for index, part in enumerate(mms_smil.data_parts):
             attachment_path = join(self.mms_dir, f"{uuid}.attachment.{index}")
             with open(attachment_path, 'wb') as file:
@@ -310,10 +311,8 @@ date={sent_time}"""
             if 'application/smil' in part.content_type:
                 smil_data = part.data.decode('utf-8').replace("\n", "").replace("\r", "")
                 smil_src = self.extract_smil_src(smil_data)
-                if smil_src is None:
-                    num_attachments = len(mms_smil.data_parts)
             else:
-                if smil_src:
+                if smil_src and isinstance(smil_src, list) and len(smil_src) > index - 1 and index > 0:
                     attachment_info = [f'<{smil_src[index-1]}>', part.content_type, attachment_path, 0, len(part.data)]
                     attachments.append(attachment_info)
                 else:
