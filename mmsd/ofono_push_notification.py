@@ -319,21 +319,23 @@ date={sent_time}"""
                     attachment_info = [f'<1>', part.content_type, attachment_path, 0, len(part.data)] # content types like vcard
                     attachments.append(attachment_info)
 
+        sender_number = sender.split('/')[0]
+        recipients = []
+        numbers = []
+        to_numbers = mms_smil.headers.get('To', [])
+        if to_numbers and len(to_numbers) > 1:
+            recipients.extend([sub(r'[^0-9+]', '', to_number) for to_number in to_numbers])
+            recipients.append(sender_number)
+
+        if mms_smil.headers.get('Delivery-Report') is None:
+            delivery_report = False
+        else:
+            delivery_report = mms_smil.headers.get('Delivery-Report')
+
         if smil_data:
-            sender_number = sender.split('/')[0]
-            recipients = []
-            numbers = []
-            to_numbers = mms_smil.headers.get('To', [])
-            if to_numbers and len(to_numbers) > 1:
-                recipients.extend([sub(r'[^0-9+]', '', to_number) for to_number in to_numbers])
-                recipients.append(sender_number)
-
-            if mms_smil.headers.get('Delivery-Report') is None:
-                delivery_report = False
-            else:
-                delivery_report = mms_smil.headers.get('Delivery-Report')
-
             self.export_mms_message(uuid, 'received', sent_time, sender_number, delivery_report, recipients, smil_data, attachments)
+        else:
+            self.export_mms_message(uuid, 'received', sent_time, sender_number, delivery_report, recipients, "", attachments)
 
     async def get_mms_context_info(self):
         proxy = ''
