@@ -624,7 +624,7 @@ class OfonoMMSManagerInterface(ServiceInterface):
             self.ofono_push_notification_interface.ofono_interface_props = self.ofono_interface_props.copy()
 
 def get_version():
-    return "2.6.1"
+    return "1.3.2"
 
 def print_version():
     version = get_version()
