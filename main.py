@@ -472,14 +472,42 @@ class OfonoMMSManagerInterface(ServiceInterface):
                 self.activation_task = self.loop.create_task(self.force_activate_context())
 
     async def activate_mms_context(self):
+        ofono_internet_ctx_interface = None
+        ofono_mms_ctx_interface = None
+        internet_apn = None
+        mms_apn = None
+
         try:
             contexts = await self.ofono_interfaces['org.ofono.ConnectionManager'].call_get_contexts()
             for ctx in contexts:
-                type = ctx[1].get('Type', Variant('s', '')).value
-                if type.lower() == "mms":
-                    ofono_ctx_interface = self.ofono_client["ofono_context"][ctx[0]]["org.ofono.ConnectionContext"]
-                    await ofono_ctx_interface.call_set_property("Active", Variant('b', True))
-                    return True
+                ctx_path = ctx[0]
+                ctx_properties = ctx[1]
+
+                ctx_type = ctx_properties.get('Type', Variant('s', '')).value
+                ctx_apn = ctx_properties.get('AccessPointName', Variant('s', '')).value
+
+                if ctx_type.lower() == "internet":
+                    ofono_internet_ctx_interface = self.ofono_client["ofono_context"][ctx_path]["org.ofono.ConnectionContext"]
+                    internet_apn = ctx_apn
+                elif ctx_type.lower() == "mms":
+                    ofono_mms_ctx_interface = self.ofono_client["ofono_context"][ctx_path]["org.ofono.ConnectionContext"]
+                    mms_apn = ctx_apn
+
+            # if there is no MMS context then there is nothing to do here
+            if ofono_mms_ctx_interface is None:
+                mmsd_print("No MMS context found", self.verbose)
+                return True
+
+            # if internet and MMS context APNs clash, MMS won't work and it will cause an infinite loop here which causes data instability
+            if (ofono_internet_ctx_interface is not None and
+                internet_apn is not None and
+                mms_apn is not None and
+                internet_apn == mms_apn):
+                mmsd_print(f"Internet and MMS contexts use the same APN ({internet_apn}), no activation needed", self.verbose)
+                return True
+
+            await ofono_mms_ctx_interface.call_set_property("Active", Variant('b', True))
+            return True
         except Exception as e:
             mmsd_print(f"Failed to activate MMS context: {e}", self.verbose)
             return False
