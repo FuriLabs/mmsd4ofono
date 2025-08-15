@@ -5,7 +5,7 @@ Priority: optional
 Build-Depends: debhelper-compat (= 13),
                dh-python,
                python3
-Standards-Version: 4.5.0.3
+Standards-Version: 4.7.0
 Vcs-Browser: https://github.com/furilabs/mmsd4ofono
 Vcs-Git: https://github.com/furilabs/mmsd4ofono.git
 
