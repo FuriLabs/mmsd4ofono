@@ -1,4 +1,2 @@
-/usr/lib/mmsd/main.py /usr/bin/mmsd
-/usr/lib/mmsd/routectld/routectld.py /usr/sbin/routectld
 /usr/lib/systemd/user/mmsd.service /usr/lib/systemd/user/gnome-session.target.wants/mmsd.service
 /dev/null /etc/systemd/user/mmsd-tng.service

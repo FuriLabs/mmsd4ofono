@@ -1,10 +1,26 @@
-main.py /usr/lib/mmsd
-mmsd /usr/lib/mmsd
-mmsdecoder/ /usr/lib/mmsd
-routectld/ /usr/lib/mmsd
-dbus/dbus.xml /usr/lib/mmsd
-dbus/ofono.xml /usr/lib/mmsd
-dbus/ofono_modem.xml /usr/lib/mmsd
-dbus/ofono_operator.xml /usr/lib/mmsd
-dbus/ofono_context.xml /usr/lib/mmsd
-debian/mmsd.service /usr/lib/systemd/user/
+usr/bin/mmsd
+usr/lib/mmsd/dbus.xml
+usr/lib/mmsd/main.py
+usr/lib/mmsd/mmscli/mmscli
+usr/lib/mmsd/mmsd/__init__.py
+usr/lib/mmsd/mmsd/logging.py
+usr/lib/mmsd/mmsd/ofono.py
+usr/lib/mmsd/mmsd/ofono_mms_message.py
+usr/lib/mmsd/mmsd/ofono_mms_modemmanager.py
+usr/lib/mmsd/mmsd/ofono_mms_service.py
+usr/lib/mmsd/mmsd/ofono_push_notification.py
+usr/lib/mmsd/mmsd/route_controller.py
+usr/lib/mmsd/mmsd/utils.py
+usr/lib/mmsd/mmsdecoder/__init__.py
+usr/lib/mmsd/mmsdecoder/iterator.py
+usr/lib/mmsd/mmsdecoder/message.py
+usr/lib/mmsd/mmsdecoder/mms_pdu.py
+usr/lib/mmsd/mmsdecoder/wsp_pdu.py
+usr/lib/mmsd/ofono.xml
+usr/lib/mmsd/ofono_context.xml
+usr/lib/mmsd/ofono_modem.xml
+usr/lib/mmsd/ofono_operator.xml
+usr/lib/mmsd/routectld/routectld.py
+usr/lib/systemd/system/routectld.service
+usr/lib/systemd/user/mmsd.service
+usr/sbin/routectld
