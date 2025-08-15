@@ -3,20 +3,20 @@ Upstream-Name: mmsd4ofono
 Source: https://github.com/furilabs/mmsd4ofono
 
 Files: mmsd/
-Copyright: 2024 Bardia Moshiri <fakeshell@bardia.tech>
+Copyright: 2025 Bardia Moshiri <fakeshell@bardia.tech>
 License: GPL-2
 
 Files: mmsdecoder/
 Copyright: 2007 Francois Aucamp <francois.aucamp@gmail.com> 
-           2024 Bardia Moshiri <fakeshell@bardia.tech>
+           2025 Bardia Moshiri <fakeshell@bardia.tech>
 License: GPL-2
 
 Files: tests/
-Copyright: 2024 Bardia Moshiri <fakeshell@bardia.tech>
+Copyright: 2025 Bardia Moshiri <fakeshell@bardia.tech>
 License: GPL-2
 
 Files: debian/*
-Copyright: 2024 Bardia Moshiri <fakeshell@bardia.tech>
+Copyright: 2025 Bardia Moshiri <fakeshell@bardia.tech>
 License: BSD-3-clause
 
 License: BSD-3-clause
