@@ -1,7 +1,6 @@
 usr/bin/mmsd
 usr/lib/mmsd/dbus.xml
 usr/lib/mmsd/main.py
-usr/lib/mmsd/mmscli/mmscli
 usr/lib/mmsd/mmsd/__init__.py
 usr/lib/mmsd/mmsd/logging.py
 usr/lib/mmsd/mmsd/ofono.py
