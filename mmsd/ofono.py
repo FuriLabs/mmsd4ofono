@@ -15,7 +15,7 @@ class ObjectProxy:
 
 class CachedClient:
     """
-    An object that keeps dbus_next's object proxies and interfaces in
+    An object that keeps dbus_fast's object proxies and interfaces in
     an internal cache.
 
     Objects are lazily-obtained when needed. Usage is as follows:

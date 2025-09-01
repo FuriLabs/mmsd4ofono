@@ -10,10 +10,10 @@ from os.path import expanduser
 from os import makedirs
 from tenacity import retry, wait_fixed
 
-from dbus_next.aio import MessageBus
-from dbus_next.service import ServiceInterface, method, dbus_property, signal
-from dbus_next.constants import PropertyAccess
-from dbus_next import DBusError, BusType, Variant
+from dbus_fast.aio import MessageBus
+from dbus_fast.service import ServiceInterface, method, dbus_property, signal
+from dbus_fast.constants import PropertyAccess
+from dbus_fast import DBusError, BusType, Variant
 
 from mmsd import OfonoMMSServiceInterface, OfonoMMSModemManagerInterface, OfonoMMSMessageInterface, OfonoPushNotification, Ofono, DBus
 from mmsd.logging import mmsd_print

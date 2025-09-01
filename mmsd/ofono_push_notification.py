@@ -11,9 +11,9 @@ from typing import Optional
 from urllib.parse import urlparse
 import asyncio
 
-from dbus_next.service import ServiceInterface, method, dbus_property, signal
-from dbus_next.constants import PropertyAccess
-from dbus_next import Variant, DBusError
+from dbus_fast.service import ServiceInterface, method, dbus_property, signal
+from dbus_fast.constants import PropertyAccess
+from dbus_fast import Variant, DBusError
 
 from mmsd.logging import mmsd_print
 
