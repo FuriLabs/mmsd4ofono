@@ -43,7 +43,6 @@ class OfonoMMSManagerInterface(ServiceInterface):
         self.already_exported = False
         self.activation_task = None
         self.context_property_setting = False
-        self.home = expanduser("~")
         self.mms_dir = expanduser("~/.mms/modemmanager")
         makedirs(self.mms_dir, exist_ok=True)
         self.loop.create_task(self.check_ofono_presence())
