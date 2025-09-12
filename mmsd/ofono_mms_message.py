@@ -3,11 +3,10 @@
 
 from os.path import join
 from os import listdir, remove
-import asyncio
 
 from dbus_fast.service import ServiceInterface, method, dbus_property, signal
 from dbus_fast.constants import PropertyAccess
-from dbus_fast import Variant, DBusError
+from dbus_fast import Variant
 
 from mmsd.logging import mmsd_print
 
@@ -40,7 +39,7 @@ class OfonoMMSMessageInterface(ServiceInterface):
         self.PropertyChanged('Status', self.props['Status'])
 
         status_file = join(self.mms_dir, self.uuid + '.status')
-        with open(status_file, 'r+') as f:
+        with open(status_file, 'r+', encoding='utf-8') as f:
             lines = f.readlines()
             for i, line in enumerate(lines):
                 if line.startswith('read='):
