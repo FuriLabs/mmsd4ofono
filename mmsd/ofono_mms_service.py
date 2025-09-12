@@ -10,13 +10,12 @@ from urllib.parse import urlparse
 from uuid import uuid4
 from re import sub
 import asyncio
-import io
 
 from aiohttp import ClientSession
 
 from dbus_fast.service import ServiceInterface, method, dbus_property, signal
 from dbus_fast.constants import PropertyAccess
-from dbus_fast import Variant, DBusError
+from dbus_fast import Variant
 
 from mmsd.logging import mmsd_print
 
@@ -67,32 +66,32 @@ class OfonoMMSServiceInterface(ServiceInterface):
         mms.headers['Message-Type'] = 'm-send-req'
         mms.headers['MMS-Version'] = '1.2'
 
-        id = self.generate_random_string(length=40)
-        mms.headers['Transaction-Id'] = id
-        mmsd_print(f"Generated transaction ID: {id}", self.verbose)
+        transaction_id = self.generate_random_string(length=40)
+        mms.headers['Transaction-Id'] = transaction_id
+        mmsd_print(f"Generated transaction ID: {transaction_id}", self.verbose)
 
         mms.headers['Content-Type'] = ('application/vnd.wap.multipart.related', {'Type': 'application/smil', 'Start': '<0000>'})
         mms.headers['Message-Class'] = 'Personal'
 
         for attachment in attachments:
-            type = attachment[1].split('/')[0]
-            if type == 'text':
+            content_type = attachment[1].split('/')[0]
+            if content_type == 'text':
                 try:
-                    with open(attachment[2], 'r') as file:
+                    with open(attachment[2], 'r', encoding='utf-8') as file:
                         text_content = file.read()
                         text_slide = MMSMessagePage()
                         text_slide.add_text(text_content)
                         mms.add_page(text_slide)
                 except Exception as e:
                     mmsd_print(f"Failed to process text attachment: {e}", self.verbose)
-            elif type == 'image':
+            elif content_type == 'image':
                 try:
                     image_slide = MMSMessagePage()
                     image_slide.add_image(attachment[2])
                     mms.add_page(image_slide)
                 except Exception as e:
                     mmsd_print(f"Failed to process image attachment: {e}", self.verbose)
-            elif type == 'audio':
+            elif content_type == 'audio':
                 try:
                     image_slide = MMSMessagePage()
                     image_slide.add_image(attachment[2])
@@ -100,12 +99,12 @@ class OfonoMMSServiceInterface(ServiceInterface):
                 except Exception as e:
                     mmsd_print(f"Failed to process audio attachment: {e}", self.verbose)
             else:
-                mmsd_print(f"Attachment type {type} not supported, skipping", self.verbose)
+                mmsd_print(f"Attachment type {content_type} not supported, skipping", self.verbose)
 
         payload = mms.encode()
         smil = ' '.join(mms.smil().split())
 
-        return mms, payload, smil, id
+        return mms, payload, smil, transaction_id
 
     async def send_message_wrapper(self, payload, uuid):
         await self.send_message(payload, uuid)
@@ -206,7 +205,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
         settings_content = ''.join(f'{key}={variant.value}\n' for key, variant in self.props.items())
 
         if exists(self.mms_config_file):
-            with open(self.mms_config_file, 'r') as f:
+            with open(self.mms_config_file, 'r', encoding='utf-8') as f:
                 lines = f.readlines()
         else:
             lines = []
@@ -231,21 +230,21 @@ class OfonoMMSServiceInterface(ServiceInterface):
             new_lines.append(settings_section)
             new_lines.append(settings_content)
 
-        with open(self.mms_config_file, 'w') as f:
+        with open(self.mms_config_file, 'w', encoding='utf-8') as f:
             f.writelines(new_lines)
 
-    def create_message_files(self, pdu, uuid, date, id):
+    def create_message_files(self, pdu, uuid, date, transaction_id):
         mmsd_print(f"Saving message {uuid} to disk", self.verbose)
         pdu_path = join(self.mms_dir, uuid)
         with open(pdu_path, 'wb') as pdu_file:
             pdu_file.write(pdu)
 
         status_path = join(self.mms_dir, f"{uuid}.status")
-        with open(status_path, 'w') as status_file:
-            status_file.write(f"[info]\n")
-            status_file.write(f"read=false\n")
-            status_file.write(f"state=sent\n")
-            status_file.write(f"id={id}\n")
+        with open(status_path, 'w', encoding='utf-8') as status_file:
+            status_file.write("[info]\n")
+            status_file.write("read=false\n")
+            status_file.write("state=sent\n")
+            status_file.write(f"id={transaction_id}\n")
             status_file.write(f"date={date}\n")
 
     @method()
@@ -271,10 +270,10 @@ class OfonoMMSServiceInterface(ServiceInterface):
             updated_attachments.append(updated_attachment)
         attachments = updated_attachments
 
-        mms, payload, smil, id = self.build_message(recipients, attachments)
+        _mms, payload, smil, transaction_id = self.build_message(recipients, attachments)
         self.loop.create_task(self.send_message_wrapper(payload, uuid))
         date = datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
-        self.create_message_files(payload, uuid, date, id)
+        self.create_message_files(payload, uuid, date, transaction_id)
         object_path = self.export_mms_message(uuid, 'sent', date, self.ofono_mms_modemmanager_interface.props['ModemNumber'].value, False, recipients, smil, attachments)
 
         return object_path
@@ -292,19 +291,19 @@ class OfonoMMSServiceInterface(ServiceInterface):
             updated_attachments.append(updated_attachment)
         attachments = updated_attachments
 
-        mms, payload, smil, id = self.build_message(recipients, attachments)
+        _mms, payload, smil, transaction_id = self.build_message(recipients, attachments)
         self.loop.create_task(self.send_message_wrapper(payload, uuid))
         date = datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
-        self.create_message_files(payload, uuid, date, id)
+        self.create_message_files(payload, uuid, date, transaction_id)
         object_path = self.export_mms_message(uuid, 'sent', date, self.ofono_mms_modemmanager_interface.props['ModemNumber'].value, False, recipients, smil, attachments)
 
         return object_path
 
     @method()
-    def SetProperty(self, property: 's', value: 'v'):
-        mmsd_print(f"Setting property {property} to value {value}", self.verbose)
-        if property in self.props:
-            self.props[property] = value
+    def SetProperty(self, prop: 's', value: 'v'):
+        mmsd_print(f"Setting property {prop} to value {value}", self.verbose)
+        if prop in self.props:
+            self.props[prop] = value
             self.save_settings_to_file()
 
     @signal()
