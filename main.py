@@ -11,14 +11,11 @@ from os import makedirs
 from tenacity import retry, wait_fixed
 
 from dbus_fast.aio import MessageBus
-from dbus_fast.service import ServiceInterface, method, dbus_property, signal
-from dbus_fast.constants import PropertyAccess
+from dbus_fast.service import ServiceInterface, method, signal
 from dbus_fast import DBusError, BusType, Variant
 
 from mmsd import OfonoMMSServiceInterface, OfonoMMSModemManagerInterface, OfonoMMSMessageInterface, OfonoPushNotification, Ofono, DBus
 from mmsd.logging import mmsd_print
-
-from mmsdecoder.message import MMSMessage
 
 has_bus = False
 
@@ -142,8 +139,8 @@ class OfonoMMSManagerInterface(ServiceInterface):
                 mmsd_print("Deactivating MMS context before setting properties", self.verbose)
                 await ctx_interface.call_set_property("Active", Variant('b', False))
 
-                for property, value in properties.items():
-                    await ctx_interface.call_set_property(property, Variant('s', value))
+                for prop, value in properties.items():
+                    await ctx_interface.call_set_property(prop, Variant('s', value))
 
                 # Success - start reactivation and return
                 self.activation_task = self.loop.create_task(self.force_activate_context())
@@ -162,18 +159,16 @@ class OfonoMMSManagerInterface(ServiceInterface):
         mmsd_print("Properties setting completed", self.verbose)
 
     @method()
-    async def SetMMSContextProperty(self, property: 's', value: 's') -> None:
-        if property not in self.ALLOWED_MMS_PROPERTIES:
-            raise ValueError(f"Property {property} is not allowed. Allowed properties are: {', '.join(self.ALLOWED_MMS_PROPERTIES)}")
-
+    async def SetMMSContextProperty(self, prop: 's', value: 's') -> None:
+        if prop not in self.ALLOWED_MMS_PROPERTIES:
+            raise ValueError(f"Property {prop} is not allowed. Allowed properties are: {', '.join(self.ALLOWED_MMS_PROPERTIES)}")
         await self.mms_set_properties({property: value})
 
     @method()
     async def SetMMSContextProperties(self, properties: 'a{ss}') -> None:
-        for property in properties.keys():
-            if property not in self.ALLOWED_MMS_PROPERTIES:
-                raise ValueError(f"Property {property} is not allowed. Allowed properties are: {', '.join(self.ALLOWED_MMS_PROPERTIES)}")
-
+        for prop in properties.keys():
+            if prop not in self.ALLOWED_MMS_PROPERTIES:
+                raise ValueError(f"Property {prop} is not allowed. Allowed properties are: {', '.join(self.ALLOWED_MMS_PROPERTIES)}")
         await self.mms_set_properties(properties)
 
     @signal()
@@ -292,9 +287,9 @@ class OfonoMMSManagerInterface(ServiceInterface):
         except DBusError as e:
             mmsd_print(f"Error interacting with modem {modem[0]}: {e}", self.verbose)
 
-    async def sim_property_changed(self, property, value):
-        mmsd_print(f"SIM property changed: property: {property}, value: {value.value}", self.verbose)
-        if property == "PinRequired":
+    async def sim_property_changed(self, prop, value):
+        mmsd_print(f"SIM property changed: property: {prop}, value: {value.value}", self.verbose)
+        if prop == "PinRequired":
             if value.value == "none":
                 # sim is now unlocked, try finding the modem again
                 self.loop.create_task(self.find_ofono_modems())
@@ -462,9 +457,9 @@ class OfonoMMSManagerInterface(ServiceInterface):
 
             await asyncio.sleep(2)
 
-    async def context_active_changed(self, property, propvalue):
-        mmsd_print(f"property: {property}, value: {propvalue}", self.verbose)
-        if property == "Active" and not self.context_property_setting:
+    async def context_active_changed(self, prop, propvalue):
+        mmsd_print(f"property: {prop}, value: {propvalue}", self.verbose)
+        if prop == "Active" and not self.context_property_setting:
             if propvalue.value == False:
                 mmsd_print("oFono MMS connection dropped while we still need it, reactivating context", self.verbose)
                 if self.activation_task and not self.activation_task.done():
@@ -525,7 +520,6 @@ class OfonoMMSManagerInterface(ServiceInterface):
 
         self.ofono_push_notification_interface = False
 
-        objects_to_remove = []
         for ofono_mms_object in self.ofono_mms_objects:
             try:
                 for ofono_mms in self.ofono_mms_interfaces:
@@ -582,14 +576,13 @@ class OfonoMMSManagerInterface(ServiceInterface):
         if iface in self.unused_interfaces:
             mmsd_print(f"Interface is {iface} which is unused, skipping", self.verbose)
             return
-        else:
-            mmsd_print(f"Add oFono interface for iface {iface}", self.verbose)
+        mmsd_print(f"Add oFono interface for iface {iface}", self.verbose)
 
         try:
             self.ofono_interfaces.update({
                 iface: self.ofono_proxy[iface]
             })
-        except Exception as e:
+        except Exception:
             mmsd_print(f"Failed to add iface {iface}, ignoring", self.verbose)
             return
 
