@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0
 # Copyright (C) 2024 Bardia Moshiri <fakeshell@bardia.tech>
 
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from os.path import join, exists, getsize
 from string import ascii_letters, digits
@@ -48,7 +47,6 @@ class OfonoMMSServiceInterface(ServiceInterface):
         }
 
         self.loop = asyncio.get_event_loop()
-        self.executor = ThreadPoolExecutor()
 
     def generate_random_string(self, length=8):
         characters = ascii_letters + digits
