@@ -3,7 +3,7 @@
 
 from dbus_fast.service import ServiceInterface, method, dbus_property, signal
 from dbus_fast.constants import PropertyAccess
-from dbus_fast import Variant, DBusError
+from dbus_fast import Variant
 
 from mmsd.logging import mmsd_print
 
@@ -70,7 +70,7 @@ class OfonoMMSModemManagerInterface(ServiceInterface):
         modem_manager_content = ''.join(f'{key}={variant.value}\n' for key, variant in self.props.items())
 
         if exists(self.mms_config_file):
-            with open(self.mms_config_file, 'r') as f:
+            with open(self.mms_config_file, 'r', encoding='utf-8') as f:
                 lines = f.readlines()
         else:
             lines = []
@@ -95,7 +95,7 @@ class OfonoMMSModemManagerInterface(ServiceInterface):
             new_lines.append(modem_manager_section)
             new_lines.append(modem_manager_content)
 
-        with open(self.mms_config_file, 'w') as f:
+        with open(self.mms_config_file, 'w', encoding='utf-8') as f:
             f.writelines(new_lines)
 
     @method()
