@@ -42,7 +42,7 @@ class CachedClient:
 
         # Load introspections
         for introspection, path in self.introspections.items():
-            with open(path, "r") as f:
+            with open(path, "r", encoding='utf-8') as f:
                 self.cache[hash(introspection)] = f.read()
 
     def get_interface(self, introspection, path, interface):
