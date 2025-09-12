@@ -11,9 +11,8 @@ from typing import Optional
 from urllib.parse import urlparse
 import asyncio
 
-from dbus_fast.service import ServiceInterface, method, dbus_property, signal
-from dbus_fast.constants import PropertyAccess
-from dbus_fast import Variant, DBusError
+from dbus_fast.service import ServiceInterface, method
+from dbus_fast import Variant
 
 from mmsd.logging import mmsd_print
 
@@ -45,7 +44,7 @@ class OfonoPushNotification(ServiceInterface):
             proxy = await self.get_mms_context_info()
             response_content = await self.fetch_mms_content(content_location, proxy)
             if response_content:
-                await self.process_mms_content(response_content, transaction_id, content_location, sender, info)
+                await self.process_mms_content(response_content, transaction_id, sender, info)
             else:
                 self.retry_queue.put_nowait((transaction_id, content_location, sender, info))
             await asyncio.sleep(5)
@@ -108,7 +107,7 @@ class OfonoPushNotification(ServiceInterface):
         proxy = await self.get_mms_context_info()
         response_content = await self.fetch_mms_content(content_location, proxy)
         if response_content:
-            await self.process_mms_content(response_content, transaction_id, content_location, sender, info)
+            await self.process_mms_content(response_content, transaction_id, sender, info)
         else:
             mmsd_print("Failed to get response content, adding to retry queue", self.verbose)
             self.retry_queue.put_nowait((transaction_id, content_location, sender, info))
@@ -146,7 +145,7 @@ class OfonoPushNotification(ServiceInterface):
                                 'attachments': []
                             }
 
-                            with open(status_path, 'r') as file:
+                            with open(status_path, 'r', encoding='utf-8') as file:
                                 for line in file:
                                     if line.startswith('state='):
                                         status_data['state'] = line.split('=')[1].strip()
@@ -184,7 +183,7 @@ class OfonoPushNotification(ServiceInterface):
                                                 attachment_info = [f'<{smil_src[index-1]}>', part.content_type, attachment_path, 0, len(part.data)]
                                                 status_data['attachments'].append(attachment_info)
                                             else:
-                                                attachment_info = [f'<1>', part.content_type, attachment_path, 0, len(part.data)] # content types like vcard
+                                                attachment_info = ['<1>', part.content_type, attachment_path, 0, len(part.data)] # content types like vcard
                                                 status_data['attachments'].append(attachment_info)
 
                             export_entries[basename] = status_data
@@ -250,8 +249,7 @@ class OfonoPushNotification(ServiceInterface):
                                 content = await response.read()
                                 mmsd_print(f"Content length: {len(content)}", self.verbose)
                                 return content
-                            else:
-                                mmsd_print(f"Failed to fetch content. HTTP status: {response.status}", self.verbose)
+                            mmsd_print(f"Failed to fetch content. HTTP status: {response.status}", self.verbose)
                     else:
                         async with session.get(resolved_url, headers=headers) as response:
                             mmsd_print(f"Response status: {response.status}", self.verbose)
@@ -259,8 +257,7 @@ class OfonoPushNotification(ServiceInterface):
                                 content = await response.read()
                                 mmsd_print(f"Content length: {len(content)}", self.verbose)
                                 return content
-                            else:
-                                mmsd_print(f"Failed to fetch content. HTTP status: {response.status}", self.verbose)
+                            mmsd_print(f"Failed to fetch content. HTTP status: {response.status}", self.verbose)
                 except Exception as e:
                     mmsd_print(f"Failed to download MMS content: {e}", self.verbose)
                 return None
@@ -268,7 +265,7 @@ class OfonoPushNotification(ServiceInterface):
             await cleanup_mms_routes()
 
 
-    async def process_mms_content(self, content, transaction_id, content_location, sender, info):
+    async def process_mms_content(self, content, transaction_id, sender, info):
         uuid = str(uuid4()).replace('-', '1')
         smil_path = join(self.mms_dir, uuid)
         status_path = join(self.mms_dir, f"{uuid}.status")
@@ -280,7 +277,7 @@ class OfonoPushNotification(ServiceInterface):
 
         mms_smil = MMSMessage.from_data(content)
 
-        with open(headers_path, 'w') as headers_file:
+        with open(headers_path, 'w', encoding='utf-8') as headers_file:
             for header_key, header_value in mms_smil.headers.items():
                 headers_file.write(f"{header_key}={header_value}\n")
             mmsd_print(f"Headers successfully saved to {headers_path}", self.verbose)
@@ -294,7 +291,7 @@ state=received
 id={message_id}
 date={sent_time}"""
 
-        with open(status_path, 'w') as status_file:
+        with open(status_path, 'w', encoding='utf-8') as status_file:
             status_file.write(meta_info)
             mmsd_print(f"Meta info successfully saved to {status_path}", self.verbose)
 
@@ -316,12 +313,11 @@ date={sent_time}"""
                     attachment_info = [f'<{smil_src[index-1]}>', part.content_type, attachment_path, 0, len(part.data)]
                     attachments.append(attachment_info)
                 else:
-                    attachment_info = [f'<1>', part.content_type, attachment_path, 0, len(part.data)] # content types like vcard
+                    attachment_info = ['<1>', part.content_type, attachment_path, 0, len(part.data)] # content types like vcard
                     attachments.append(attachment_info)
 
         sender_number = sender.split('/')[0]
         recipients = []
-        numbers = []
         to_numbers = mms_smil.headers.get('To', [])
         if to_numbers and len(to_numbers) > 1:
             recipients.extend([sub(r'[^0-9+]', '', to_number) for to_number in to_numbers])
@@ -353,8 +349,7 @@ date={sent_time}"""
         src_list = [splitext(match[1])[0] for match in sources]
         if src_list:
             return src_list
-        else:
-            return None
+        return None
 
     def ofono_changed(self, name, varval):
         self.ofono_props[name] = varval
