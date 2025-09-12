@@ -48,6 +48,7 @@ class MMSRouteController:
                         return properties["Settings"]["Interface"]
                     elif "IPv6.Settings" in properties:
                         return properties["IPv6.Settings"]["Interface"]
+        return None
 
     async def setup_routes(self, interface: str, ips: List[str]) -> bool:
         mmsd_print(f"Setting up route for interface: {interface} with ips: {ips}", self.verbose)
@@ -74,7 +75,7 @@ class MMSRouteController:
             return False
 
     def cleanup_routes(self):
-        mmsd_print(f"Cleaning up routes", self.verbose)
+        mmsd_print("Cleaning up routes", self.verbose)
         for route in self.active_routes:
             try:
                 self.ipr.route('del', **route)
