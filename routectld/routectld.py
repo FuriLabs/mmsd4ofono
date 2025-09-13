@@ -26,7 +26,6 @@ class MMSRouteController:
         mmsd_print("Initializing MMS route controller", verbose)
         self.verbose = verbose
         self.socket_path = "/run/mmsroutectl.sock"
-        self.allowed_uid = None
         self.ipr = pyroute2.IPRoute()
         self.active_routes = []
 
