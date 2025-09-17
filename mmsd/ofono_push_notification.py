@@ -21,14 +21,12 @@ from mmsd.utils import resolve_host
 from mmsdecoder.message import MMSMessage
 
 class OfonoPushNotification(ServiceInterface):
-    def __init__(self, bus, ofono_client, ofono_props, ofono_interfaces, ofono_interface_props, mms_dir, export_mms_message, path, verbose=False):
+    def __init__(self, bus, ofono_interfaces, ofono_interface_props, mms_dir, export_mms_message, path, verbose=False):
         super().__init__("org.ofono.PushNotificationAgent")
         self.modem_name = path
         mmsd_print("Initializing oFono push notification agent interface", verbose)
         self.bus = bus
         self.verbose = verbose
-        self.ofono_client = ofono_client
-        self.ofono_props = ofono_props
         self.ofono_interfaces = ofono_interfaces
         self.ofono_interface_props = ofono_interface_props
         self.mms_dir = mms_dir
@@ -351,15 +349,8 @@ date={sent_time}"""
             return src_list
         return None
 
-    def ofono_changed(self, name, varval):
-        self.ofono_props[name] = varval
-
-    def ofono_client_changed(self, ofono_client):
-        self.ofono_client = ofono_client
-
     def ofono_interface_changed(self, iface):
         def ch(name, varval):
             if iface in self.ofono_interface_props:
                 self.ofono_interface_props[iface][name] = varval
-
         return ch

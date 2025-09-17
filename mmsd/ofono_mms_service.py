@@ -23,15 +23,11 @@ from mmsd.utils import resolve_host
 from mmsdecoder.message import MMSMessage, MMSMessagePage
 
 class OfonoMMSServiceInterface(ServiceInterface):
-    def __init__(self, ofono_client, ofono_props, ofono_interfaces, ofono_interface_props, mms_dir, ofono_mms_modemmanager_interface, export_mms_message, path, verbose=False):
+    def __init__(self, mms_dir, ofono_mms_modemmanager_interface, export_mms_message, path, verbose=False):
         super().__init__('org.ofono.mms.Service')
         self.modem_name = path
         mmsd_print("Initializing MMS Service interface", verbose)
-        self.ofono_client = ofono_client
         self.verbose = verbose
-        self.ofono_props = ofono_props
-        self.ofono_interfaces = ofono_interfaces
-        self.ofono_interface_props = ofono_interface_props
         self.mms_dir = mms_dir
         self.ofono_mms_modemmanager_interface = ofono_mms_modemmanager_interface
         self.export_mms_message = export_mms_message
@@ -192,10 +188,6 @@ class OfonoMMSServiceInterface(ServiceInterface):
             finally:
                 await cleanup_mms_routes()
 
-    def set_props(self):
-        mmsd_print("Setting properties", self.verbose)
-        self.save_settings_to_file()
-
     def save_settings_to_file(self):
         mmsd_print(f"Saving settings to file {self.mms_config_file}", self.verbose)
 
@@ -343,18 +335,3 @@ class OfonoMMSServiceInterface(ServiceInterface):
     @dbus_property(access=PropertyAccess.READ)
     def NotificationInds(self) -> 'i':
         return self.props['NotificationInds'].value
-
-    def ofono_changed(self, name, varval):
-        self.ofono_props[name] = varval
-        self.set_props()
-
-    def ofono_client_changed(self, ofono_client):
-        self.ofono_client = ofono_client
-
-    def ofono_interface_changed(self, iface):
-        def ch(name, varval):
-            if iface in self.ofono_interface_props:
-                self.ofono_interface_props[iface][name] = varval
-            self.set_props()
-
-        return ch

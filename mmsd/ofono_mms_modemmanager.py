@@ -11,13 +11,11 @@ from os.path import join, exists
 import asyncio
 
 class OfonoMMSModemManagerInterface(ServiceInterface):
-    def __init__(self, ofono_client, ofono_props, ofono_interfaces, ofono_interface_props, mms_dir, path, verbose=False):
+    def __init__(self, ofono_interfaces, ofono_interface_props, mms_dir, path, verbose=False):
         super().__init__('org.ofono.mms.ModemManager')
         self.modem_name = path
         mmsd_print("Initializing MMS modem manager interface", verbose)
-        self.ofono_client = ofono_client
         self.verbose = verbose
-        self.ofono_props = ofono_props
         self.ofono_interfaces = ofono_interfaces
         self.ofono_interface_props = ofono_interface_props
         self.mms_dir = mms_dir
@@ -164,17 +162,9 @@ class OfonoMMSModemManagerInterface(ServiceInterface):
     def AutoProcessSMSWAP(self) -> 'b':
         return self.props['AutoProcessSMSWAP'].value
 
-    def ofono_changed(self, name, varval):
-        self.ofono_props[name] = varval
-        asyncio.create_task(self.set_props())
-
-    def ofono_client_changed(self, ofono_client):
-        self.ofono_client = ofono_client
-
     def ofono_interface_changed(self, iface):
         def ch(name, varval):
             if iface in self.ofono_interface_props:
                 self.ofono_interface_props[iface][name] = varval
             asyncio.create_task(self.set_props())
-
         return ch
