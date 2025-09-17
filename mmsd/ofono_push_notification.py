@@ -42,7 +42,7 @@ class OfonoPushNotification(ServiceInterface):
             proxy = await self.get_mms_context_info()
             response_content = await self.fetch_mms_content(content_location, proxy)
             if response_content:
-                await self.process_mms_content(response_content, transaction_id, sender, info)
+                self.process_mms_content(response_content, transaction_id, sender, info)
             else:
                 self.retry_queue.put_nowait((transaction_id, content_location, sender, info))
             await asyncio.sleep(5)
@@ -105,13 +105,13 @@ class OfonoPushNotification(ServiceInterface):
         proxy = await self.get_mms_context_info()
         response_content = await self.fetch_mms_content(content_location, proxy)
         if response_content:
-            await self.process_mms_content(response_content, transaction_id, sender, info)
+            self.process_mms_content(response_content, transaction_id, sender, info)
         else:
             mmsd_print("Failed to get response content, adding to retry queue", self.verbose)
             self.retry_queue.put_nowait((transaction_id, content_location, sender, info))
 
     @method()
-    async def Release(self):
+    def Release(self):
         mmsd_print(f"Agent released on path {self.agent_path}", self.verbose)
         self.registered = False
         self.bus.unexport(self.agent_path)
@@ -206,7 +206,6 @@ class OfonoPushNotification(ServiceInterface):
             proxy_port = '80' if not ':' in proxy else proxy.split(':')[1]
             resolved_proxy = f"{proxy_ips[0]}:{proxy_port}"
 
-
         if not proxy:
             url_parts = urlparse(url)
             url_ips = await resolve_host(url_parts.hostname, self.verbose)
@@ -262,8 +261,7 @@ class OfonoPushNotification(ServiceInterface):
         finally:
             await cleanup_mms_routes()
 
-
-    async def process_mms_content(self, content, transaction_id, sender, info):
+    def process_mms_content(self, content, transaction_id, sender, info):
         uuid = str(uuid4()).replace('-', '1')
         smil_path = join(self.mms_dir, uuid)
         status_path = join(self.mms_dir, f"{uuid}.status")

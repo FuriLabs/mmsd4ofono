@@ -97,23 +97,23 @@ class OfonoMMSModemManagerInterface(ServiceInterface):
             f.writelines(new_lines)
 
     @method()
-    async def PushNotify(self, smswap: 'ay'):
+    def PushNotify(self, smswap: 'ay'):
         mmsd_print(f"Push notify smswap: {smswap}", self.verbose)
 
     @method()
-    async def ViewSettings(self) -> 'a{sv}':
+    def ViewSettings(self) -> 'a{sv}':
         mmsd_print("View settings", self.verbose)
         return self.props
 
     @method()
-    async def ChangeSettings(self, setting: 's', value: 'v'):
+    def ChangeSettings(self, setting: 's', value: 'v'):
         mmsd_print(f"Changing setting {setting} to {value}", self.verbose)
         if setting in self.props:
             self.props[setting] = value
             self.save_settings_to_file()
 
     @method()
-    async def ChangeAllSettings(self, options: 'a{sv}'):
+    def ChangeAllSettings(self, options: 'a{sv}'):
         mmsd_print(f"Changing settings {options}", self.verbose)
         for setting, value in options.items():
             if setting in self.props:
@@ -121,7 +121,7 @@ class OfonoMMSModemManagerInterface(ServiceInterface):
         self.save_settings_to_file()
 
     @method()
-    async def ProcessMessageQueue(self):
+    def ProcessMessageQueue(self):
         mmsd_print("Process message queue", self.verbose)
 
     @signal()
