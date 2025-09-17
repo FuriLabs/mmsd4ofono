@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0
-# Copyright (C) 2024 Bardia Moshiri <fakeshell@bardia.tech>
+# Copyright (C) 2025 Bardia Moshiri <fakeshell@bardia.tech>
 
 from datetime import datetime
 from os.path import join, exists, getsize

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
-# Copyright (C) 2024 Bardia Moshiri <fakeshell@bardia.tech>
+# Copyright (C) 2025 Bardia Moshiri <fakeshell@bardia.tech>
 
 import dbus
 import argparse

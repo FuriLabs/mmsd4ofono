@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0
-# Copyright (C) 2024 Bardia Moshiri <fakeshell@bardia.tech>
+# Copyright (C) 2025 Bardia Moshiri <fakeshell@bardia.tech>
 
 from dbus_fast.service import ServiceInterface, method, dbus_property, signal
 from dbus_fast.constants import PropertyAccess
