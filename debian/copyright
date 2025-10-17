@@ -11,10 +11,6 @@ Copyright: 2007 Francois Aucamp <francois.aucamp@gmail.com>
            2025 Bardia Moshiri <fakeshell@bardia.tech>
 License: GPL-2
 
-Files: tests/
-Copyright: 2025 Bardia Moshiri <fakeshell@bardia.tech>
-License: GPL-2
-
 Files: debian/*
 Copyright: 2025 Bardia Moshiri <fakeshell@bardia.tech>
 License: BSD-3-clause

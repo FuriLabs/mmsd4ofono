@@ -21,13 +21,6 @@ Depends: ${misc:Depends},
          python3-pyroute2,
 Description: A python daemon implementing the MMSD API
 
-Package: mmsd4ofono-scripts
-Architecture: all
-Depends: ${misc:Depends},
-         ${python3:Depends},
-         python3-dbus,
-Description: A python daemon implementing the MMSD API - test scripts
-
 Package: mmscli
 Architecture: all
 Depends: ${misc:Depends},

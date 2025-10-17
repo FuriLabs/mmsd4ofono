@@ -2,7 +2,6 @@ PREFIX ?= /usr
 LIBDIR ?= $(PREFIX)/lib
 BINDIR ?= $(PREFIX)/bin
 SBINDIR ?= $(PREFIX)/sbin
-SHAREDIR ?= $(PREFIX)/share
 SYSTEMD_USER_DIR = /usr/lib/systemd/user
 SYSTEMD_SYSTEM_DIR = /usr/lib/systemd/system
 
@@ -21,7 +20,6 @@ install:
 	install -d $(DESTDIR)$(SBINDIR)/
 	install -d $(DESTDIR)$(SYSTEMD_USER_DIR)/
 	install -d $(DESTDIR)$(SYSTEMD_SYSTEM_DIR)/
-	install -d $(DESTDIR)$(SHAREDIR)/mmsd/scripts/
 
 	install -m 755 $(MAIN) $(DESTDIR)$(LIBDIR)/mmsd/
 	cp -r $(MMSD_DIRS) $(DESTDIR)$(LIBDIR)/mmsd/
@@ -30,8 +28,6 @@ install:
 
 	install -m 644 data/mmsd.service $(DESTDIR)$(SYSTEMD_USER_DIR)/
 	install -m 644 data/routectld.service $(DESTDIR)$(SYSTEMD_SYSTEM_DIR)/
-
-	cp -r tests/* $(DESTDIR)$(SHAREDIR)/mmsd/scripts/
 
 	ln -sf ../lib/mmsd/main.py $(DESTDIR)$(BINDIR)/mmsd
 	ln -sf ../lib/mmsd/mmscli/mmscli $(DESTDIR)$(BINDIR)/mmscli
@@ -44,4 +40,3 @@ uninstall:
 	rm -f $(DESTDIR)$(SBINDIR)/routectld
 	rm -f $(DESTDIR)$(SYSTEMD_USER_DIR)/mmsd.service
 	rm -f $(DESTDIR)$(SYSTEMD_SYSTEM_DIR)/mmsd4ofono.routectld.service
-	rm -rf $(DESTDIR)$(SHAREDIR)/mmsd

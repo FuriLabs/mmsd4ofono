@@ -1,9 +1,0 @@
-usr/share/mmsd/scripts/delete-message
-usr/share/mmsd/scripts/get-messages
-usr/share/mmsd/scripts/get-services
-usr/share/mmsd/scripts/list-services
-usr/share/mmsd/scripts/mark-messages-read
-usr/share/mmsd/scripts/monitor-mms
-usr/share/mmsd/scripts/sanitized-send-mms-subject
-usr/share/mmsd/scripts/send-message
-usr/share/mmsd/scripts/set-use-delivery-reports
