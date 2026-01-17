@@ -20,7 +20,7 @@ from mmsd.logging import mmsd_print
 
 from mmsd.route_controller import cleanup_mms_routes, setup_mms_routes
 from mmsd.utils import resolve_host
-from mmsdecoder.message import MMSMessage, MMSMessagePage
+from mmsdecoder.message import MMSMessage, MMSMessagePage, DataPart
 
 class OfonoMMSServiceInterface(ServiceInterface):
     def __init__(self, mms_dir, ofono_mms_modemmanager_interface, export_mms_message, path, verbose=False):
@@ -69,6 +69,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
 
         for attachment in attachments:
             content_type = attachment[1].split('/')[0]
+            mmsd_print(f"Attachment content type is {content_type}, attachment is {attachment[2]}", self.verbose)
             if content_type == 'text':
                 try:
                     with open(attachment[2], 'r', encoding='utf-8') as file:
@@ -93,7 +94,11 @@ class OfonoMMSServiceInterface(ServiceInterface):
                 except Exception as e:
                     mmsd_print(f"Failed to process audio attachment: {e}", self.verbose)
             else:
-                mmsd_print(f"Attachment type {content_type} not supported, skipping", self.verbose)
+                try:
+                    data_part = DataPart(attachment[2])
+                    mms.add_data_part(data_part)
+                except Exception as e:
+                    mmsd_print(f"Failed to process data part attachment: {e}", self.verbose)
 
         payload = mms.encode()
         smil = ' '.join(mms.smil().split())
