@@ -74,9 +74,9 @@ class OfonoMMSServiceInterface(ServiceInterface):
                 try:
                     with open(attachment[2], 'r', encoding='utf-8') as file:
                         text_content = file.read()
-                        text_slide = MMSMessagePage()
-                        text_slide.add_text(text_content)
-                        mms.add_page(text_slide)
+                    text_slide = MMSMessagePage()
+                    text_slide.add_text(text_content)
+                    mms.add_page(text_slide)
                 except Exception as e:
                     mmsd_print(f"Failed to process text attachment: {e}", self.verbose)
             elif content_type == 'image':
