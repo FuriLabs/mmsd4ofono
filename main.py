@@ -161,7 +161,7 @@ class OfonoMMSManagerInterface(ServiceInterface):
     async def SetMMSContextProperty(self, prop: 's', value: 's') -> None:
         if prop not in self.ALLOWED_MMS_PROPERTIES:
             raise ValueError(f"Property {prop} is not allowed. Allowed properties are: {', '.join(self.ALLOWED_MMS_PROPERTIES)}")
-        await self.mms_set_properties({property: value})
+        await self.mms_set_properties({prop: value})
 
     @method()
     async def SetMMSContextProperties(self, properties: 'a{ss}') -> None:
