@@ -821,6 +821,8 @@ class MMSEncoder(wsp_pdu.Encoder):
                 if part_tuple is not None:
                     parts.append(part_tuple[0])
 
+        parts.extend(self._mms_message._data_parts)
+
         for part in parts:
             name, val_type = part.headers['Content-Type']
             part_content_type = self.encode_content_type_value(name, val_type)
