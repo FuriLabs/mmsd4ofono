@@ -16,6 +16,7 @@ from dbus_fast import DBusError, BusType, Variant
 
 from mmsd import OfonoMMSServiceInterface, OfonoMMSModemManagerInterface, OfonoMMSMessageInterface, OfonoPushNotification, Ofono, DBus
 from mmsd.logging import mmsd_print
+from mmsd.utils import sanitize_dbus_string
 
 has_bus = False
 
@@ -394,6 +395,8 @@ class OfonoMMSManagerInterface(ServiceInterface):
         if status == 'received' and not recipients:
             recipients.append(self.ofono_mms_modemmanager_interface.props['ModemNumber'].value)
 
+        sanitized_smil = sanitize_dbus_string(smil)
+
         props_array = {
             'Status': Variant('s', status),
             'Date': Variant('s', date),
@@ -402,7 +405,7 @@ class OfonoMMSManagerInterface(ServiceInterface):
             'Delivery Report': Variant('b', delivery_report),
             'Modem Number': Variant('s', self.ofono_mms_modemmanager_interface.props['ModemNumber'].value),
             'Recipients': Variant('as', recipients),
-            'Smil': Variant('s', smil),
+            'Smil': Variant('s', sanitized_smil),
             'Attachments': Variant('a(ssstt)', attachments)
         }
 

@@ -16,3 +16,18 @@ async def resolve_host(hostname: str, verbose) -> List[str]:
     except Exception as e:
         mmsd_print(f"Failed to resolve {hostname}: {e}", verbose)
         return []
+
+def sanitize_dbus_string(value) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", errors="replace")
+    else:
+        value = str(value)
+
+    value = value.encode("utf-8", errors="replace").decode("utf-8", errors="replace")
+
+    # strip NULs
+    value = value.replace("\x00", "")
+
+    return value
