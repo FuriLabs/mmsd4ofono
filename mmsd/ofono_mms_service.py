@@ -88,9 +88,9 @@ class OfonoMMSServiceInterface(ServiceInterface):
                     mmsd_print(f"Failed to process image attachment: {e}", self.verbose)
             elif content_type == 'audio':
                 try:
-                    image_slide = MMSMessagePage()
-                    image_slide.add_image(attachment[2])
-                    mms.add_page(image_slide)
+                    audio_slide = MMSMessagePage()
+                    audio_slide.add_audio(attachment[2])
+                    mms.add_page(audio_slide)
                 except Exception as e:
                     mmsd_print(f"Failed to process audio attachment: {e}", self.verbose)
             else:
