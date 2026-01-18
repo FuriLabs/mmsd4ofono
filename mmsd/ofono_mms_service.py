@@ -64,8 +64,10 @@ class OfonoMMSServiceInterface(ServiceInterface):
         mms.headers['Transaction-Id'] = transaction_id
         mmsd_print(f"Generated transaction ID: {transaction_id}", self.verbose)
 
-        mms.headers['Content-Type'] = ('application/vnd.wap.multipart.related', {'Type': 'application/smil', 'Start': '<0000>'})
+        mms.headers['Content-Type'] = ('application/vnd.wap.multipart.mixed', {})
         mms.headers['Message-Class'] = 'Personal'
+
+        has_pages = False
 
         for attachment in attachments:
             content_type = attachment[1].split('/')[0]
@@ -77,6 +79,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
                     text_slide = MMSMessagePage()
                     text_slide.add_text(text_content)
                     mms.add_page(text_slide)
+                    has_pages = True
                 except Exception as e:
                     mmsd_print(f"Failed to process text attachment: {e}", self.verbose)
             elif content_type == 'image':
@@ -84,6 +87,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
                     image_slide = MMSMessagePage()
                     image_slide.add_image(attachment[2])
                     mms.add_page(image_slide)
+                    has_pages = True
                 except Exception as e:
                     mmsd_print(f"Failed to process image attachment: {e}", self.verbose)
             elif content_type == 'audio':
@@ -91,6 +95,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
                     audio_slide = MMSMessagePage()
                     audio_slide.add_audio(attachment[2])
                     mms.add_page(audio_slide)
+                    has_pages = True
                 except Exception as e:
                     mmsd_print(f"Failed to process audio attachment: {e}", self.verbose)
             else:
@@ -100,8 +105,17 @@ class OfonoMMSServiceInterface(ServiceInterface):
                 except Exception as e:
                     mmsd_print(f"Failed to process data part attachment: {e}", self.verbose)
 
+        # without any pages we don't need any smil
+        if has_pages:
+            mms.headers['Content-Type'] = (
+                'application/vnd.wap.multipart.related',
+                {'Type': 'application/smil', 'Start': '<0000>'}
+            )
+            smil = ' '.join(mms.smil().split())
+        else:
+            smil = ''
+
         payload = mms.encode()
-        smil = ' '.join(mms.smil().split())
 
         return mms, payload, smil, transaction_id
 
