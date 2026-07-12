@@ -8,22 +8,25 @@ _ROUTE_DAEMON_PATH = "/run/mmsroutectl.sock"
 
 async def setup_mms_routes(ips: List[str]) -> bool:
     try:
-        _, writer = await asyncio.open_unix_connection(_ROUTE_DAEMON_PATH)
+        reader, writer = await asyncio.open_unix_connection(_ROUTE_DAEMON_PATH)
         request = {
             'action': 'setup',
             'ips': ips
         }
 
-        writer.write(json.dumps(request).encode())
+        writer.write((json.dumps(request) + "\n").encode())
         await writer.drain()
+
+        response = await asyncio.wait_for(reader.readline(), timeout=5.0)
 
         writer.close()
         await writer.wait_closed()
 
-        # Let the daemon catch up and apply the routes
-        await asyncio.sleep(1)
+        if not response:
+            mmsd_print("Route daemon closed the connection without a response", True)
+            return False
 
-        return True
+        return bool(json.loads(response.decode()).get('ok'))
 
     except Exception as e:
         mmsd_print(f"Failed to setup MMS routes: {e}", True)

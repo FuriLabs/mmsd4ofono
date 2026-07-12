@@ -53,21 +53,55 @@ class MMSRouteController:
         mmsd_print(f"Setting up route for interface: {interface} with ips: {ips}", self.verbose)
         try:
             idx = self.ipr.link_lookup(ifname=interface)[0]
-
             addrs = self.ipr.get_addr(index=idx)
-            if not addrs:
-                return False
-            src_addr = [x.get_attr('IFA_ADDRESS') for x in addrs][0]
 
+            # Select a source address that matches the destination address
+            # family so the kernel can install a valid route. For IPv6,
+            # ignore link-local addresses since they are only reachable on
+            # the local link and cannot be used to reach remote MMS servers.
+            def global_src(want_ipv6):
+                for a in addrs:
+                    is_ipv6 = a['family'] == 10
+                    if is_ipv6 != want_ipv6:
+                        continue
+                    if is_ipv6 and a['scope'] == 253:  # RT_SCOPE_LINK
+                        continue
+                    return a.get_attr('IFA_ADDRESS')
+                return None
+
+            # Prefer the MMS-dedicated CLAT instance (clat-mms) set up by
+            # clatd handler for this carrier's IPv6-only MMS PDN
+            # it's routed specifically to the carrier-private address space the MMSC
+            # lives in, unlike the general 'clat' instance (general internet NAT64),
+            clat_idx = self.ipr.link_lookup(ifname='clat-mms')
+            if not clat_idx:
+                clat_idx = self.ipr.link_lookup(ifname='clat')
+            clat_idx = clat_idx[0] if clat_idx else None
+
+            ok = False
             for ip in ips:
-                mmsd_print(f"Adding route for {ip} via {interface}", self.verbose)
-                self.ipr.route('add', dst=ip, oif=idx, src=src_addr)
-                self.active_routes.append({
-                    'dst': ip,
-                    'oif': idx,
-                    'src': src_addr
-                })
-            return True
+                is_ipv6 = ':' in ip
+                src_addr = global_src(is_ipv6)
+
+                if src_addr is not None:
+                    mmsd_print(f"Adding route for {ip} via {interface}", self.verbose)
+                    self.ipr.route('add', dst=ip, oif=idx, src=src_addr)
+                    self.active_routes.append({'dst': ip, 'oif': idx, 'src': src_addr})
+                    ok = True
+                elif not is_ipv6 and clat_idx is not None:
+                    # No IPv4 on this bearer, but the box's CLAT/NAT64
+                    # translator is up - route the IPv4 destination through
+                    # it rather than the raw (IPv6-only) cellular interface.
+                    mmsd_print(f"Adding route for {ip} via clat (bearer is IPv6-only)", self.verbose)
+                    self.ipr.route('add', dst=ip, oif=clat_idx)
+                    self.active_routes.append({'dst': ip, 'oif': clat_idx})
+                    ok = True
+                else:
+                    mmsd_print(f"No usable route to {ip}: bearer {interface} has no "
+                               f"{'IPv6' if is_ipv6 else 'IPv4'} address"
+                               + ("" if is_ipv6 else " and CLAT is not up"), self.verbose)
+
+            return ok
         except Exception as e:
             mmsd_print(f"Failed to setup routes: {e}", self.verbose)
             self.cleanup_routes()
@@ -85,14 +119,16 @@ class MMSRouteController:
 
     async def handle_client(self, reader, writer):
         try:
-            data = await reader.read()
+            data = await reader.readline()
             request = json.loads(data.decode())
 
             if request['action'] == 'setup':
-                await self.setup_routes(
+                ok = await self.setup_routes(
                     self._get_mms_interface(),
                     request['ips']
                 )
+                writer.write((json.dumps({'ok': ok}) + "\n").encode())
+                await writer.drain()
             elif request['action'] == 'cleanup':
                 self.cleanup_routes()
 
