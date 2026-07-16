@@ -5,8 +5,8 @@ import json
 import pwd
 import sys
 from argparse import ArgumentParser
-from os import chown, chmod, environ, unlink
-from os.path import realpath, join, dirname
+from os import access, chown, chmod, environ, unlink, X_OK
+from os.path import isfile, realpath, join, dirname
 from pathlib import Path
 from typing import List
 
@@ -19,6 +19,8 @@ sys.path.insert(0, topdir)
 mmsd_dir = "/usr/lib/mmsd"
 sys.path.insert(0, mmsd_dir)
 
+CLATD_BEARER_MANAGER = "/usr/libexec/clatd-bearer-manager"
+
 from mmsd.logging import mmsd_print
 
 class MMSRouteController:
@@ -28,6 +30,19 @@ class MMSRouteController:
         self.socket_path = "/run/mmsroutectl.sock"
         self.ipr = pyroute2.IPRoute()
         self.active_routes = []
+
+    async def _run_clatd_bearer_manager(self):
+        if not (isfile(CLATD_BEARER_MANAGER) and access(CLATD_BEARER_MANAGER, X_OK)):
+            return
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                CLATD_BEARER_MANAGER, "--mms-only",
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            await asyncio.wait_for(proc.wait(), timeout=15)
+        except Exception as e:
+            mmsd_print(f"clatd-bearer-manager invocation failed: {e}", self.verbose)
 
     def _get_mms_interface(self) -> str:
         bus = dbus.SystemBus()
@@ -50,6 +65,7 @@ class MMSRouteController:
         return None
 
     async def setup_routes(self, interface: str, ips: List[str]) -> bool:
+        await self._run_clatd_bearer_manager()
         mmsd_print(f"Setting up route for interface: {interface} with ips: {ips}", self.verbose)
         try:
             idx = self.ipr.link_lookup(ifname=interface)[0]
