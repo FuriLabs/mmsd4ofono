@@ -204,7 +204,9 @@ class OfonoPushNotification(ServiceInterface):
             needed_ips.extend(proxy_ips)
 
             proxy_port = '80' if not ':' in proxy else proxy.split(':')[1]
-            resolved_proxy = f"{proxy_ips[0]}:{proxy_port}"
+            # IPv6 literals must be bracketed in a URL host component (RFC 3986 3.2.2)
+            proxy_host_bracketed = f"[{proxy_ips[0]}]" if ":" in proxy_ips[0] else proxy_ips[0]
+            resolved_proxy = f"{proxy_host_bracketed}:{proxy_port}"
 
         if not proxy:
             url_parts = urlparse(url)
@@ -214,8 +216,10 @@ class OfonoPushNotification(ServiceInterface):
                 return None
             needed_ips.extend(url_ips)
 
+            # IPv6 literals must be bracketed in a URL host component (RFC 3986 3.2.2)
+            resolved_host = f"[{url_ips[0]}]" if ":" in url_ips[0] else url_ips[0]
             resolved_url = url_parts._replace(
-                netloc=f"{url_ips[0]}" + (f":{url_parts.port}" if url_parts.port else "")
+                netloc=resolved_host + (f":{url_parts.port}" if url_parts.port else "")
             ).geturl()
         else:
             url_parts = urlparse(url)
