@@ -10,9 +10,12 @@ from mmsd.logging import mmsd_print
 async def resolve_host(hostname: str, verbose) -> List[str]:
     try:
         addrinfo = await asyncio.get_event_loop().getaddrinfo(
-            hostname, None, family=socket.AF_INET
+            hostname, None, family=socket.AF_UNSPEC
         )
-        return list(set(addr[4][0] for addr in addrinfo))
+        addrs = list(dict.fromkeys(addr[4][0] for addr in addrinfo))
+        ipv6 = [a for a in addrs if ":" in a]
+        ipv4 = [a for a in addrs if ":" not in a]
+        return ipv6 + ipv4
     except Exception as e:
         mmsd_print(f"Failed to resolve {hostname}: {e}", verbose)
         return []
