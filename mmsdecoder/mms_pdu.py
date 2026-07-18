@@ -824,6 +824,16 @@ class MMSEncoder(wsp_pdu.Encoder):
         parts.extend(self._mms_message._data_parts)
 
         for part in parts:
+            # Pre-encode text data so len(part) reflects byte length, not char count
+            if isinstance(part.data, str):
+                name, params = part.headers['Content-Type']
+                if name == 'text/plain' and any(ord(c) > 0x7F for c in part.data):
+                    encoded_str = part.data.encode('utf-8')
+                    part.headers['Content-Type'] = (name, dict(params, Charset='utf-8'))
+                    part._data = encoded_str
+                else:
+                    part._data = part.data.encode('utf-8')
+
             name, val_type = part.headers['Content-Type']
             part_content_type = self.encode_content_type_value(name, val_type)
 
@@ -845,10 +855,7 @@ class MMSEncoder(wsp_pdu.Encoder):
             # Headers
             message_body.extend(encoded_part_headers)
             # Data (note: we do not null-terminate this)
-            if isinstance(part.data, str):
-                for char in part.data:
-                    message_body.append(ord(char))
-            elif isinstance(part.data, bytes):
+            if isinstance(part.data, bytes):
                 message_body.extend(int(byte) for byte in part.data)
             else:
                 raise TypeError(f"Unsupported data type: {type(part.data)}")
