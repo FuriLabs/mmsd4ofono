@@ -79,6 +79,7 @@ class OfonoMMSManagerInterface(ServiceInterface):
         }
 
         self.ALLOWED_MMS_PROPERTIES = {
+            'Protocol',
             'AccessPointName',
             'MessageProxy',
             'MessageCenter',
