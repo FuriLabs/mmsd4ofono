@@ -2082,3 +2082,24 @@ class Encoder:
             encoded_accept_value.extend(encoded_media_range)
 
         return encoded_accept_value
+
+    @staticmethod
+    def encode_well_known_charset(charset_value):
+        """
+        Encodes a well-known charset value
+
+        Looks up the charset string in the WELL_KNOWN_CHARSETS table and encodes
+        the assigned integer value.
+
+        :param charset_value: The charset name to encode (e.g. 'utf-8')
+        :type charset_value: str
+
+        :raise EncodeError: The charset is not in the WELL_KNOWN_CHARSETS table
+
+        :return: The encoded charset value, as a sequence of bytes
+        :rtype: list
+        """
+        for assigned_number, name in WELL_KNOWN_CHARSETS.items():
+            if name == charset_value:
+                return Encoder.encode_integer_value(assigned_number)
+        raise EncodeError('Unknown charset: %s' % charset_value)
