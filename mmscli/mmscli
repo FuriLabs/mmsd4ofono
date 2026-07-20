@@ -98,18 +98,23 @@ def build_message(image, audio, text, receiver, sender):
     return payload
 
 def encode_mms_message(out_file, image, audio, text, receiver, sender):
-   payload = build_message(image, audio, text, receiver, sender)
-   with open(out_file, 'wb') as file:
-       file.write(payload)
+    payload = build_message(image, audio, text, receiver, sender)
+    with open(out_file, 'wb') as file:
+        file.write(payload)
+
+def get_manager():
+    bus = dbus.SessionBus()
+
+    manager = dbus.Interface(
+        bus.get_object('org.ofono.mms', '/org/ofono/mms'),
+        'org.ofono.mms.Manager'
+    )
+
+    return manager
 
 def action_info():
     try:
-        bus = dbus.SessionBus()
-
-        manager = dbus.Interface(
-            bus.get_object('org.ofono.mms', '/org/ofono/mms'),
-            'org.ofono.mms.Manager'
-        )
+        manager = get_manager()
 
         services = manager.GetServices()
         for entry in services:
@@ -121,6 +126,7 @@ def action_info():
             for key, val in properties.items():
                 print(f"    {key} = {val}")
 
+            bus = dbus.SessionBus()
             service = dbus.Interface(
                 bus.get_object('org.ofono.mms', path),
                 'org.ofono.mms.Service'
@@ -131,6 +137,17 @@ def action_info():
                 print(f"    {key} = {val}")
     except Exception as e:
         print(f"Failed to get MMS daemon info: {e}")
+
+def action_set_mms_context_property(prop, value):
+    try:
+        manager = get_manager()
+        manager.SetMMSContextProperty(
+            dbus.String(prop),
+            dbus.String(value)
+        )
+        print(f"Set MMS context property {prop} to {value}")
+    except Exception as e:
+        print(f"Failed to set MMS context property: {e}")
 
 def main():
     parser = argparse.ArgumentParser(description="MMS control tool")
@@ -148,6 +165,24 @@ def main():
     parser_encode.add_argument('--file', '-f', help="File to save the encoded PDU")
     parser_encode.add_argument('--sender', help="Sender of the PDU")
     parser_encode.add_argument('--receiver', help="Receiver of the PDU")
+
+    parser_setprop = sub.add_parser('setprop', help="Set an MMS context property")
+    parser_setprop.add_argument(
+        'property',
+        choices=[
+            'Protocol',
+            'AccessPointName',
+            'MessageProxy',
+            'MessageCenter',
+            'Username',
+            'Password'
+        ],
+        help="MMS context property name"
+    )
+    parser_setprop.add_argument(
+        'value',
+        help="MMS context property value"
+    )
 
     args = parser.parse_args()
 
@@ -176,6 +211,10 @@ def main():
             print("No sender is provided")
             return
         encode_mms_message(args.file, args.image, args.audio, args.text, args.receiver, args.sender)
+        return
+
+    if args.action == "setprop":
+        action_set_mms_context_property(args.property, args.value)
         return
 
 if __name__ == '__main__':
