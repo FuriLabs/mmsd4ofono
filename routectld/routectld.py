@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-import pwd
 import sys
 from argparse import ArgumentParser
 from os import access, chown, chmod, environ, unlink, X_OK
@@ -168,7 +167,7 @@ class MMSRouteController:
         )
 
         chmod(self.socket_path, 0o660)
-        chown(self.socket_path, 0, pwd.getpwnam('furios').pw_uid)
+        chown(self.socket_path, 0, 32011)
 
         async with server:
             await server.serve_forever()
