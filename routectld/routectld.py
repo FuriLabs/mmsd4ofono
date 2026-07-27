@@ -43,6 +43,14 @@ class MMSRouteController:
         except Exception as e:
             mmsd_print(f"clatd-bearer-manager invocation failed: {e}", self.verbose)
 
+    def _context_interface(self, properties) -> str:
+        for key in ("Settings", "IPv6.Settings"):
+            interface = properties.get(key, {}).get("Interface")
+            if interface:
+                return str(interface)
+
+        return None
+
     def _get_mms_interface(self) -> str:
         bus = dbus.SystemBus()
         manager = dbus.Interface(bus.get_object('org.ofono', '/'), 'org.ofono.Manager')
