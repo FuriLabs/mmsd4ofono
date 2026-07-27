@@ -63,12 +63,26 @@ class MMSRouteController:
             connman = dbus.Interface(bus.get_object('org.ofono', path), 'org.ofono.ConnectionManager')
             contexts = connman.GetContexts()
 
+            # A carrier that serves MMS off the same APN as the internet
+            # context never activates the MMS one separately - mmsd sends
+            # over the internet bearer instead - so the MMS context reports
+            # no interface at all. Fall back to that bearer rather than
+            # failing every send.
+            fallback = None
             for path, properties in contexts:
+                interface = self._context_interface(properties)
+                if not interface:
+                    continue
+
                 if properties['Type'] == 'mms':
-                    if "Settings" in properties:
-                        return properties["Settings"]["Interface"]
-                    elif "IPv6.Settings" in properties:
-                        return properties["IPv6.Settings"]["Interface"]
+                    return interface
+
+                if properties['Type'] == 'internet':
+                    fallback = interface
+
+            if fallback:
+                return fallback
+
         return None
 
     async def setup_routes(self, interface: str, ips: List[str]) -> bool:
