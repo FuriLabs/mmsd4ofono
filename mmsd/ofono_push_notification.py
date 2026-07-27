@@ -2,7 +2,7 @@
 # Copyright (C) 2025 Bardia Moshiri <fakeshell@bardia.tech>
 
 from os.path import join, exists, splitext
-from aiohttp import ClientSession
+from aiohttp import ClientSession, ClientTimeout
 from array import array
 from uuid import uuid4
 from re import sub, compile
@@ -19,6 +19,14 @@ from mmsd.logging import mmsd_print
 from mmsd.route_controller import cleanup_mms_routes, setup_mms_routes
 from mmsd.utils import resolve_host
 from mmsdecoder.message import MMSMessage
+
+# An unreachable MMSC address otherwise costs the OS connect timeout - about
+# 30s observed - before the next candidate is tried, which is long enough to
+# make a working fallback look like a failed fetch.
+CONNECT_TIMEOUT = 8
+# The transfer itself needs room: messages run to hundreds of kilobytes and
+# may cross a CLAT.
+FETCH_TIMEOUT = 120
 
 class OfonoPushNotification(ServiceInterface):
     def __init__(self, bus, ofono_interfaces, ofono_interface_props, mms_dir, export_mms_message, path, verbose=False):
@@ -216,14 +224,21 @@ class OfonoPushNotification(ServiceInterface):
                 return None
             needed_ips.extend(url_ips)
 
-            # IPv6 literals must be bracketed in a URL host component (RFC 3986 3.2.2)
-            resolved_host = f"[{url_ips[0]}]" if ":" in url_ips[0] else url_ips[0]
-            resolved_url = url_parts._replace(
-                netloc=resolved_host + (f":{url_parts.port}" if url_parts.port else "")
-            ).geturl()
+            # Every resolved address is a candidate. resolve_host() returns IPv6 ahead of
+            # IPv4, but which family can actually reach the MMSC depends on the bearer: an
+            # IPv6-only PDN reaches IPv4 through the CLAT, while some PDNs have no path to
+            # the carrier's NAT64 prefix. Try each resolved address in order until one
+            # succeeds.
+            candidate_urls = [
+                url_parts._replace(
+                    netloc=(f"[{ip}]" if ":" in ip else ip)
+                    + (f":{url_parts.port}" if url_parts.port else "")
+                ).geturl()
+                for ip in url_ips
+            ]
         else:
             url_parts = urlparse(url)
-            resolved_url = url
+            candidate_urls = [url]
 
         if not await setup_mms_routes(needed_ips):
             mmsd_print("Failed to setup MMS routes", self.verbose)
@@ -232,35 +247,39 @@ class OfonoPushNotification(ServiceInterface):
             return None
 
         try:
-            async with ClientSession() as session:
-                try:
-                    mmsd_print(f"Fetching URL: {resolved_url} using proxy: {resolved_proxy}", self.verbose)
+            # Fail a dead path fast but leave room for the transfer itself: an MMS
+            # runs to hundreds of kilobytes and the CLAT path is slow, so only the
+            # connect phase is held to a short timeout.
+            timeout = ClientTimeout(sock_connect=CONNECT_TIMEOUT, total=FETCH_TIMEOUT)
+            async with ClientSession(timeout=timeout) as session:
+                # Set Host header to original hostname - some carriers don't like it when you GET by IP
+                headers = {'Host': url_parts.hostname}
 
-                    # Set Host header to original hostname - some carriers don't like it when you GET by IP
-                    headers = {'Host': url_parts.hostname}
+                for resolved_url in candidate_urls:
+                    try:
+                        mmsd_print(f"Fetching URL: {resolved_url} using proxy: {resolved_proxy}", self.verbose)
 
-                    if resolved_proxy:
-                        async with session.get(
-                            resolved_url,
-                            proxy=f"http://{resolved_proxy}",
-                            headers=headers
-                        ) as response:
+                        if resolved_proxy:
+                            request = session.get(
+                                resolved_url,
+                                proxy=f"http://{resolved_proxy}",
+                                headers=headers
+                            )
+                        else:
+                            request = session.get(resolved_url, headers=headers)
+
+                        async with request as response:
                             mmsd_print(f"Response status: {response.status}", self.verbose)
                             if response.status == 200:
                                 content = await response.read()
                                 mmsd_print(f"Content length: {len(content)}", self.verbose)
                                 return content
                             mmsd_print(f"Failed to fetch content. HTTP status: {response.status}", self.verbose)
-                    else:
-                        async with session.get(resolved_url, headers=headers) as response:
-                            mmsd_print(f"Response status: {response.status}", self.verbose)
-                            if response.status == 200:
-                                content = await response.read()
-                                mmsd_print(f"Content length: {len(content)}", self.verbose)
-                                return content
-                            mmsd_print(f"Failed to fetch content. HTTP status: {response.status}", self.verbose)
-                except Exception as e:
-                    mmsd_print(f"Failed to download MMS content: {e}", self.verbose)
+                    except Exception as e:
+                        # Try the next candidate rather than giving up: the remaining
+                        # addresses may be reachable by a path this one is not.
+                        mmsd_print(f"Failed to download MMS content: {e}", self.verbose)
+
                 return None
         finally:
             await cleanup_mms_routes()
