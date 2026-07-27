@@ -171,7 +171,12 @@ class MMSRouteController:
 
             writer.close()
         except Exception as e:
-            mmsd_print(f"Error handling client: {e}", self.verbose)
+            mmsd_print(f"Error handling client: {e}", True)
+            try:
+                writer.write((json.dumps({'ok': False}) + "\n").encode())
+                await writer.drain()
+            except Exception:
+                pass
             writer.close()
 
     async def run(self):
