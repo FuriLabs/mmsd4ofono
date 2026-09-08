@@ -178,7 +178,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
                          mmsd_print(f"Sending message to: {resolved_url} using proxy: {resolved_proxy}", self.verbose)
 
                          headers = {
-                             'Host': url_parts.hostname,
+                             'Host': url_parts.netloc,
                              'Content-Type': 'application/vnd.wap.mms-message',
                              'User-Agent': 'Android MmsLib/1.0',
                              'Connection': 'Keep-Alive',

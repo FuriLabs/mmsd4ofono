@@ -253,7 +253,7 @@ class OfonoPushNotification(ServiceInterface):
             timeout = ClientTimeout(sock_connect=CONNECT_TIMEOUT, total=FETCH_TIMEOUT)
             async with ClientSession(timeout=timeout) as session:
                 # Set Host header to original hostname - some carriers don't like it when you GET by IP
-                headers = {'Host': url_parts.hostname}
+                headers = {'Host': url_parts.netloc}
 
                 for resolved_url in candidate_urls:
                     try:
