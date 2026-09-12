@@ -217,17 +217,18 @@ class OfonoMMSManagerInterface(ServiceInterface):
         attempts = 0
         max_attempts = 5
         modem = None
-        modem_interfaces = None
+        modem_interfaces = set()
         while not self.ofono_modem_list and attempts < max_attempts:
             try:
                 if self.ofono_manager_interface is None:
                     mmsd_print("oFono manager interface is not initialized properly. skipping", self.verbose)
+                    self.modem_added_block = False
                     return
 
                 modems = await self.ofono_manager_interface.call_get_modems()
 
-                for modem in modems:
-                    mmsd_print(f"Modems available in oFono: {modem[0]}", self.verbose)
+                for candidate in modems:
+                    mmsd_print(f"Modems available in oFono: {candidate[0]}", self.verbose)
 
                 self.ofono_modem_list = [
                     x
@@ -256,6 +257,8 @@ class OfonoMMSManagerInterface(ServiceInterface):
             except DBusError as e:
                 mmsd_print(f"Failed to get the current modem: {e}", self.verbose)
                 self.ofono_modem_list = False
+                modem = None
+                modem_interfaces = set()
                 attempts += 1
                 if attempts < max_attempts:
                     await asyncio.sleep(2)
@@ -273,11 +276,15 @@ class OfonoMMSManagerInterface(ServiceInterface):
                 # if they are not exported, systemd will assume service has failed and it will restart it.
                 # exporting it early really doesn't change anything since there is no logic bound to ofono in any of the interfaces initialization
                 self.loop.create_task(self.export_mmsd_objects(modem[0]))
+
+            self.modem_added_block = False
+            mmsd_print("Waiting for a RIL modem to be added", self.verbose)
             return
 
         try:
             if modem is None:
                 mmsd_print("No modem found or modem is None", self.verbose)
+                self.modem_added_block = False
                 return
 
             mmsd_print(f"modem is {modem[0]}", self.verbose)
@@ -287,6 +294,7 @@ class OfonoMMSManagerInterface(ServiceInterface):
             await task
         except DBusError as e:
             mmsd_print(f"Error interacting with modem {modem[0]}: {e}", self.verbose)
+            self.modem_added_block = False
 
     async def sim_property_changed(self, prop, value):
         mmsd_print(f"SIM property changed: property: {prop}, value: {value.value}", self.verbose)
@@ -305,6 +313,10 @@ class OfonoMMSManagerInterface(ServiceInterface):
 
     def ofono_modem_added(self, path, mprops):
         mmsd_print(f"oFono modem added at path {path} and properties {mprops}", self.verbose)
+
+        if not path.startswith("/ril_"):
+            mmsd_print(f"Ignoring non-RIL modem at path {path}", self.verbose)
+            return
 
         if self.modem_added_block:
             mmsd_print("oFono modem block is on, skipping", self.verbose)
