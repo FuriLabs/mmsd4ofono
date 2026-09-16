@@ -2,6 +2,7 @@
 # Copyright (C) 2025 Bardia Moshiri <fakeshell@bardia.tech>
 
 from datetime import datetime
+from configparser import ConfigParser, Error
 from os.path import join, exists, getsize
 from string import ascii_letters, digits
 from random import choice
@@ -42,6 +43,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
             'NotificationInds': Variant('i', 0),
             'ForceCAres': Variant('b', True)
         }
+        self.load_settings_from_file()
 
         self.loop = asyncio.get_event_loop()
 
@@ -283,6 +285,51 @@ class OfonoMMSServiceInterface(ServiceInterface):
                         await asyncio.sleep(5)
             finally:
                 await cleanup_mms_routes()
+
+    def load_settings_from_file(self):
+        if not exists(self.mms_config_file):
+            return
+
+        config = ConfigParser(interpolation=None)
+        config.optionxform = str
+
+        try:
+            with open(self.mms_config_file, 'r', encoding='utf-8') as f:
+                config.read_file(f)
+        except (OSError, Error) as e:
+            mmsd_print(f"Failed to load settings from {self.mms_config_file}: {e}", self.verbose)
+            return
+
+        if not config.has_section('Settings'):
+            return
+
+        settings = config['Settings']
+        boolean_properties = {
+            'UseDeliveryReports',
+            'AutoCreateSMIL',
+            'ForceCAres'
+        }
+        integer_properties = {
+            'TotalMaxAttachmentSize',
+            'MaxAttachments',
+            'NotificationInds'
+        }
+
+        for prop in boolean_properties:
+            if prop not in settings:
+                continue
+            try:
+                self.props[prop] = Variant('b', settings.getboolean(prop))
+            except ValueError:
+                mmsd_print(f"Invalid boolean value for {prop} in {self.mms_config_file}, keeping default", self.verbose)
+
+        for prop in integer_properties:
+            if prop not in settings:
+                continue
+            try:
+                self.props[prop] = Variant('i', settings.getint(prop))
+            except ValueError:
+                mmsd_print(f"Invalid integer value for {prop} in {self.mms_config_file}, keeping default", self.verbose)
 
     def save_settings_to_file(self):
         mmsd_print(f"Saving settings to file {self.mms_config_file}", self.verbose)
