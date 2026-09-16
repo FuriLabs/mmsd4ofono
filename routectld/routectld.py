@@ -4,6 +4,7 @@ import asyncio
 import json
 import sys
 from argparse import ArgumentParser
+from errno import EEXIST
 from os import access, chown, chmod, environ, unlink, X_OK
 from os.path import isfile, realpath, join, dirname
 from pathlib import Path
@@ -122,16 +123,28 @@ class MMSRouteController:
 
                 if src_addr is not None:
                     mmsd_print(f"Adding route for {ip} via {interface}", self.verbose)
-                    self.ipr.route('add', dst=ip, oif=idx, src=src_addr)
-                    self.active_routes.append({'dst': ip, 'oif': idx, 'src': src_addr})
+                    route = {'dst': ip, 'oif': idx, 'src': src_addr}
+                    try:
+                        self.ipr.route('add', **route)
+                        self.active_routes.append(route)
+                    except pyroute2.NetlinkError as e:
+                        if e.code != EEXIST:
+                            raise
+                        mmsd_print(f"Route for {ip} already exists", self.verbose)
                     ok = True
                 elif not is_ipv6 and clat_idx is not None:
                     # No IPv4 on this bearer, but the box's CLAT/NAT64
                     # translator is up - route the IPv4 destination through
                     # it rather than the raw (IPv6-only) cellular interface.
                     mmsd_print(f"Adding route for {ip} via clat (bearer is IPv6-only)", self.verbose)
-                    self.ipr.route('add', dst=ip, oif=clat_idx)
-                    self.active_routes.append({'dst': ip, 'oif': clat_idx})
+                    route = {'dst': ip, 'oif': clat_idx}
+                    try:
+                        self.ipr.route('add', **route)
+                        self.active_routes.append(route)
+                    except pyroute2.NetlinkError as e:
+                        if e.code != EEXIST:
+                            raise
+                        mmsd_print(f"Route for {ip} already exists", self.verbose)
                     ok = True
                 else:
                     mmsd_print(f"No usable route to {ip}: bearer {interface} has no "
