@@ -29,7 +29,7 @@ CONNECT_TIMEOUT = 8
 FETCH_TIMEOUT = 120
 
 class OfonoPushNotification(ServiceInterface):
-    def __init__(self, bus, ofono_interfaces, ofono_interface_props, mms_dir, export_mms_message, path, verbose=False):
+    def __init__(self, bus, ofono_interfaces, ofono_interface_props, mms_dir, export_mms_message, update_mms_message, path, verbose=False):
         super().__init__("org.ofono.PushNotificationAgent")
         self.modem_name = path
         mmsd_print("Initializing oFono push notification agent interface", verbose)
@@ -39,6 +39,7 @@ class OfonoPushNotification(ServiceInterface):
         self.ofono_interface_props = ofono_interface_props
         self.mms_dir = mms_dir
         self.export_mms_message = export_mms_message
+        self.update_mms_message = update_mms_message
         self.agent_path = False
         self.registered = False
         self.retry_queue = asyncio.Queue()
@@ -54,6 +55,129 @@ class OfonoPushNotification(ServiceInterface):
             else:
                 self.retry_queue.put_nowait((transaction_id, content_location, sender, info))
             await asyncio.sleep(5)
+
+    def read_status_file(self, status_path):
+        status_data = {}
+        with open(status_path, 'r', encoding='utf-8') as status_file:
+            for line in status_file:
+                if '=' not in line:
+                    continue
+                key, value = line.rstrip('\n').split('=', 1)
+                status_data[key] = value
+        return status_data
+
+    def update_status_file(self, status_path, updates):
+        with open(status_path, 'r', encoding='utf-8') as status_file:
+            lines = status_file.readlines()
+
+        updated_keys = set()
+        for index, line in enumerate(lines):
+            if '=' not in line:
+                continue
+
+            key = line.split('=', 1)[0]
+            if key in updates:
+                lines[index] = f"{key}={updates[key]}\n"
+                updated_keys.add(key)
+
+        for key, value in updates.items():
+            if key not in updated_keys:
+                lines.append(f"{key}={value}\n")
+
+        with open(status_path, 'w', encoding='utf-8') as status_file:
+            status_file.writelines(lines)
+
+    def parse_delivery_status(self, delivery_status):
+        statuses = {}
+        if not delivery_status:
+            return statuses
+
+        for entry in delivery_status.split(','):
+            if '=' not in entry:
+                continue
+            recipient, status = entry.split('=', 1)
+            if recipient:
+                statuses[recipient] = status
+
+        return statuses
+
+    def process_delivery_report(self, mms):
+        message_id = mms.headers.get('Message-ID')
+        delivery_status = mms.headers.get('Status')
+        recipients = mms.headers.get('To', [])
+
+        if not message_id:
+            mmsd_print("Delivery report has no Message-ID, skipping", self.verbose)
+            return
+
+        if not delivery_status:
+            mmsd_print(f"Delivery report for Message-ID {message_id} has no Status, skipping", self.verbose)
+            return
+
+        if isinstance(recipients, str):
+            recipients = [recipients]
+
+        recipient = ''
+        if recipients:
+            recipient = sub(r'[^0-9+]', '', recipients[0])
+
+        if not isinstance(delivery_status, str):
+            delivery_status = 'unrecognized'
+        else:
+            delivery_status = delivery_status.lower()
+            if delivery_status == 'unrecognised':
+                delivery_status = 'unrecognized'
+
+        for filename in listdir(self.mms_dir):
+            if not filename.endswith('.status'):
+                continue
+
+            status_path = join(self.mms_dir, filename)
+            try:
+                status_data = self.read_status_file(status_path)
+            except OSError as e:
+                mmsd_print(f"Failed to read status file {status_path}: {e}", self.verbose)
+                continue
+
+            if status_data.get('id') != message_id:
+                continue
+
+            if status_data.get('delivery_report') != 'true':
+                continue
+
+            uuid = filename.rsplit('.status', 1)[0]
+            delivery_statuses = self.parse_delivery_status(status_data.get('delivery_status', ''))
+
+            matching_recipients = []
+
+            for number in delivery_statuses:
+                if recipient and number.lstrip('+') == recipient.lstrip('+'):
+                    matching_recipients.append(number)
+
+            if recipient in delivery_statuses:
+                delivery_recipient = recipient
+            elif len(matching_recipients) == 1:
+                delivery_recipient = matching_recipients[0]
+            elif len(delivery_statuses) == 1:
+                delivery_recipient = next(iter(delivery_statuses))
+            elif recipient:
+                delivery_recipient = recipient
+            else:
+                mmsd_print(f"Delivery report for Message-ID {message_id} has no recipient and cannot be matched", self.verbose)
+                return
+
+            delivery_statuses[delivery_recipient] = delivery_status
+            delivery_status_string = ','.join(f"{number}={status}" for number, status in delivery_statuses.items())
+
+            file_updates = {'delivery_status': delivery_status_string}
+            property_updates = {'Delivery Status': Variant('s', delivery_status_string)}
+
+            self.update_status_file(status_path, file_updates)
+            self.update_mms_message(uuid, property_updates, f"delivery_update,{delivery_recipient}={delivery_status}")
+            mmsd_print(f"Updated delivery status for message {uuid}: {delivery_status_string}", self.verbose)
+            return
+
+        mmsd_print(f"Could not find sent message for delivery report Message-ID {message_id}", self.verbose)
 
     async def RegisterAgent(self, path: 'o'):
         if self.registered:
@@ -103,8 +227,13 @@ class OfonoPushNotification(ServiceInterface):
         transaction_id = mms.headers.get('Transaction-Id')
         content_location = mms.headers.get('Content-Location')
         sender = mms.headers.get('From')
+        message_type = mms.headers.get('Message-Type')
 
         mmsd_print(f"Transaction-Id: {transaction_id}, Content-Location: {content_location}, From: {sender}", self.verbose)
+
+        if message_type == 'm-delivery-ind':
+            self.process_delivery_report(mms)
+            return
 
         if content_location is None:
             mmsd_print("Content location is None, is this even MMS? skipping", self.verbose)

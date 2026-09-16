@@ -23,7 +23,7 @@ from mmsd.utils import resolve_host
 from mmsdecoder.message import MMSMessage, MMSMessagePage, DataPart
 
 class OfonoMMSServiceInterface(ServiceInterface):
-    def __init__(self, mms_dir, ofono_mms_modemmanager_interface, export_mms_message, path, verbose=False):
+    def __init__(self, mms_dir, ofono_mms_modemmanager_interface, export_mms_message, update_mms_message, path, verbose=False):
         super().__init__('org.ofono.mms.Service')
         self.modem_name = path
         mmsd_print("Initializing MMS Service interface", verbose)
@@ -31,6 +31,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
         self.mms_dir = mms_dir
         self.ofono_mms_modemmanager_interface = ofono_mms_modemmanager_interface
         self.export_mms_message = export_mms_message
+        self.update_mms_message = update_mms_message
         self.mms_config_file = join(self.mms_dir, 'mms')
         self.messages = []
         self.props = {
@@ -66,6 +67,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
 
         mms.headers['Content-Type'] = ('application/vnd.wap.multipart.mixed', {})
         mms.headers['Message-Class'] = 'Personal'
+        mms.headers['Delivery-Report'] = self.props['UseDeliveryReports'].value
 
         has_pages = False
 
@@ -121,6 +123,74 @@ class OfonoMMSServiceInterface(ServiceInterface):
 
     async def send_message_wrapper(self, payload, uuid):
         await self.send_message(payload, uuid)
+
+    def update_message_status_file(self, uuid, updates):
+        status_path = join(self.mms_dir, f"{uuid}.status")
+        if not exists(status_path):
+            mmsd_print(f"Status file for message {uuid} does not exist", self.verbose)
+            return
+
+        with open(status_path, 'r', encoding='utf-8') as status_file:
+            lines = status_file.readlines()
+
+        updated_keys = set()
+        for index, line in enumerate(lines):
+            if '=' not in line:
+                continue
+
+            key = line.split('=', 1)[0]
+            if key in updates:
+                lines[index] = f"{key}={updates[key]}\n"
+                updated_keys.add(key)
+
+        for key, value in updates.items():
+            if key not in updated_keys:
+                lines.append(f"{key}={value}\n")
+
+        with open(status_path, 'w', encoding='utf-8') as status_file:
+            status_file.writelines(lines)
+
+    def process_send_conf(self, response_body, uuid):
+        if not response_body:
+            mmsd_print("MMSC returned an empty response body, keeping the send successful", self.verbose)
+            return True
+
+        try:
+            response_mms = MMSMessage.from_data(response_body)
+        except Exception as e:
+            mmsd_print(f"Failed to parse MMSC response body: {e}, keeping the send successful", self.verbose)
+            return True
+
+        if response_mms.headers.get('Message-Type') != 'm-send-conf':
+            mmsd_print(f"MMSC response is not m-send-conf: {response_mms.headers.get('Message-Type')}, keeping the send successful", self.verbose)
+            return True
+
+        message_id = response_mms.headers.get('Message-ID')
+        if message_id:
+            mmsd_print(f"MMSC assigned Message-ID {message_id} to message {uuid}", self.verbose)
+            self.update_message_status_file(uuid, {'id': message_id})
+
+        response_status = response_mms.headers.get('Response-Status')
+        if response_status is None:
+            mmsd_print("m-send-conf has no Response-Status, keeping the send successful", self.verbose)
+            return True
+
+        if response_status == 'Ok':
+            return True
+
+        response_text = response_mms.headers.get('Response-Text', '')
+        properties = {
+            'UUID': Variant('s', uuid),
+            'ResponseStatus': Variant('s', str(response_status)),
+        }
+        if response_text:
+            properties['ResponseText'] = Variant('s', str(response_text))
+
+        self.update_message_status_file(uuid, {'state': 'sending_failed'})
+        self.update_mms_message(uuid, {'Status': Variant('s', 'sending_failed')})
+        self.MessageSendError(properties)
+        mmsd_print(f"MMSC rejected message {uuid}: {response_status}", self.verbose)
+        return False
 
     async def send_message(self, payload, uuid):
         while True:
@@ -194,6 +264,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
                              ) as response:
                                 mmsd_print(f"Response status: {response.status}", self.verbose)
                                 response.raise_for_status()
+                                response_body = await response.read()
                          else:
                              async with session.post(
                                  resolved_url,
@@ -202,8 +273,10 @@ class OfonoMMSServiceInterface(ServiceInterface):
                              ) as response:
                                  mmsd_print(f"Response status: {response.status}", self.verbose)
                                  response.raise_for_status()
+                                 response_body = await response.read()
 
-                         mmsd_print(f"Message {uuid} sent successfully", self.verbose)
+                         if self.process_send_conf(response_body, uuid):
+                             mmsd_print(f"Message {uuid} sent successfully", self.verbose)
                          break
                     except Exception as e:
                         mmsd_print(f"Error sending message: {str(e)}. Retrying...", self.verbose)
@@ -246,7 +319,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
         with open(self.mms_config_file, 'w', encoding='utf-8') as f:
             f.writelines(new_lines)
 
-    def create_message_files(self, pdu, uuid, date, transaction_id):
+    def create_message_files(self, pdu, uuid, date, transaction_id, delivery_report, delivery_status):
         mmsd_print(f"Saving message {uuid} to disk", self.verbose)
         pdu_path = join(self.mms_dir, uuid)
         with open(pdu_path, 'wb') as pdu_file:
@@ -259,6 +332,8 @@ class OfonoMMSServiceInterface(ServiceInterface):
             status_file.write("state=sent\n")
             status_file.write(f"id={transaction_id}\n")
             status_file.write(f"date={date}\n")
+            status_file.write(f"delivery_report={str(delivery_report).lower()}\n")
+            status_file.write(f"delivery_status={delivery_status}\n")
 
     @method()
     def GetMessages(self) -> 'a(oa{sv})':
@@ -284,10 +359,23 @@ class OfonoMMSServiceInterface(ServiceInterface):
         attachments = updated_attachments
 
         _mms, payload, smil, transaction_id = self.build_message(recipients, attachments)
+        delivery_report = self.props['UseDeliveryReports'].value
+        delivery_recipients = [sub(r'[^0-9+]', '', recipient) for recipient in recipients]
+        delivery_status = ','.join(f"{recipient}=none" for recipient in delivery_recipients) if delivery_report else ''
         self.loop.create_task(self.send_message_wrapper(payload, uuid))
         date = datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
-        self.create_message_files(payload, uuid, date, transaction_id)
-        object_path = self.export_mms_message(uuid, 'sent', date, self.ofono_mms_modemmanager_interface.props['ModemNumber'].value, False, recipients, smil, attachments)
+        self.create_message_files(payload, uuid, date, transaction_id, delivery_report, delivery_status)
+        object_path = self.export_mms_message(
+            uuid,
+            'sent',
+            date,
+            self.ofono_mms_modemmanager_interface.props['ModemNumber'].value,
+            delivery_report,
+            recipients,
+            smil,
+            attachments,
+            delivery_status
+        )
 
         return object_path
 

@@ -32,6 +32,7 @@ class OfonoMMSManagerInterface(ServiceInterface):
         self.dbus_client = DBus(system_bus)
         self.ofono_mms_interfaces = []
         self.ofono_mms_objects = []
+        self.ofono_mms_message_interfaces = {}
         self.ofono_proxy = []
         self.ofono_props = {}
         self.ofono_interfaces = {}
@@ -341,7 +342,14 @@ class OfonoMMSManagerInterface(ServiceInterface):
             mmsd_print("Skip exporting mms modem manager interface at /org/ofono/mms, path is already exported", self.verbose)
 
         if self.props['services'][0][0] not in self.ofono_mms_objects:
-            self.ofono_mms_service_interface = OfonoMMSServiceInterface(self.mms_dir, self.ofono_mms_modemmanager_interface, self.export_mms_message, path, self.verbose)
+            self.ofono_mms_service_interface = OfonoMMSServiceInterface(
+                self.mms_dir,
+                self.ofono_mms_modemmanager_interface,
+                self.export_mms_message,
+                self.update_mms_message,
+                path,
+                self.verbose
+            )
             self.session_bus.export(self.props['services'][0][0], self.ofono_mms_service_interface)
             self.ofono_mms_interfaces.append(self.ofono_mms_service_interface)
             self.ofono_mms_objects.append(self.props['services'][0][0])
@@ -367,7 +375,16 @@ class OfonoMMSManagerInterface(ServiceInterface):
 
             await self.export_mmsd_objects(path)
 
-            self.ofono_push_notification_interface = OfonoPushNotification(self.system_bus, self.ofono_interfaces, self.ofono_interface_props, self.mms_dir, self.export_mms_message, path, self.verbose)
+            self.ofono_push_notification_interface = OfonoPushNotification(
+                self.system_bus,
+                self.ofono_interfaces,
+                self.ofono_interface_props,
+                self.mms_dir,
+                self.export_mms_message,
+                self.update_mms_message,
+                path,
+                self.verbose
+            )
             await self.ofono_push_notification_interface.RegisterAgent('/mmsd')
             self.ofono_mms_interfaces.append(self.ofono_push_notification_interface)
             self.ofono_mms_objects.append('/mmsd')
@@ -402,7 +419,7 @@ class OfonoMMSManagerInterface(ServiceInterface):
         except Exception as e:
             mmsd_print(f"Failed to set up MMS context monitoring: {e}", self.verbose)
 
-    def export_mms_message(self, uuid, status, date, sender, delivery_report, recipients, smil, attachments):
+    def export_mms_message(self, uuid, status, date, sender, delivery_report, recipients, smil, attachments, delivery_status=''):
         ofono_mms_message = OfonoMMSMessageInterface(self.mms_dir, uuid, self.delete_mms_message, self.verbose)
 
         if status == 'received' and not recipients:
@@ -416,6 +433,7 @@ class OfonoMMSManagerInterface(ServiceInterface):
             'Subject': Variant('s', ''),
             'Sender': Variant('s', sender),
             'Delivery Report': Variant('b', delivery_report),
+            'Delivery Status': Variant('s', delivery_status),
             'Modem Number': Variant('s', self.ofono_mms_modemmanager_interface.props['ModemNumber'].value),
             'Recipients': Variant('as', recipients),
             'Smil': Variant('s', sanitized_smil),
@@ -430,6 +448,7 @@ class OfonoMMSManagerInterface(ServiceInterface):
         object_path = f"{self.props['services'][0][0]}/{uuid}"
 
         self.session_bus.export(object_path, ofono_mms_message)
+        self.ofono_mms_message_interfaces[uuid] = ofono_mms_message
 
         self.ofono_mms_service_interface.messages.append([object_path, props_array])
         self.ofono_mms_service_interface.MessageAdded(object_path, props_array)
@@ -442,10 +461,38 @@ class OfonoMMSManagerInterface(ServiceInterface):
 
         return object_path
 
+    def update_mms_message(self, uuid, properties, status_update=None):
+        ofono_mms_message = self.ofono_mms_message_interfaces.get(uuid)
+        if not ofono_mms_message:
+            mmsd_print(f"Cannot update MMS message {uuid}: message is not exported", self.verbose)
+            return False
+
+        object_path = f"{self.props['services'][0][0]}/{uuid}"
+
+        for key, value in properties.items():
+            if key not in ofono_mms_message.props:
+                continue
+            ofono_mms_message.props[key] = value
+            if key == 'Delivery Status':
+                continue
+            signal_name = 'status' if key == 'Status' else key
+            ofono_mms_message.PropertyChanged(signal_name, value)
+
+        if status_update:
+            ofono_mms_message.PropertyChanged('status', Variant('s', status_update))
+
+        for message in self.ofono_mms_service_interface.messages:
+            if message[0] == object_path:
+                message[1].update(properties)
+                break
+
+        return True
+
     def delete_mms_message(self, uuid):
         object_path = f"{self.props['services'][0][0]}/{uuid}"
         mmsd_print(f"Unexporting MMS message at path {object_path}", self.verbose)
         self.session_bus.unexport(object_path)
+        self.ofono_mms_message_interfaces.pop(uuid, None)
         for message in self.ofono_mms_service_interface.messages:
             if message[0] == object_path:
                 self.ofono_mms_service_interface.messages.remove(message)
