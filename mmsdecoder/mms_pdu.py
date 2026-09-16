@@ -567,11 +567,34 @@ class MMSDecoder(wsp_pdu.Decoder):
             0x86: 'Error-network-problem',
             0x87: 'Error-content-not-accepted',
             0x88: 'Error-unsupported-message',
+            0xc0: 'Error-transient-failure',
+            0xc1: 'Error-transient-sending-address-unresolved',
+            0xc2: 'Error-transient-message-not-found',
+            0xc3: 'Error-transient-network-problem',
+            0xc4: 'Error-transient-partial-success',
+            0xe0: 'Error-permanent-failure',
+            0xe1: 'Error-permanent-service-denied',
+            0xe2: 'Error-permanent-message-format-corrupt',
+            0xe3: 'Error-permanent-sending-address-unresolved',
+            0xe4: 'Error-permanent-message-not-found',
+            0xe5: 'Error-permanent-content-not-accepted',
+            0xe6: 'Error-permanent-reply-charging-limitations-not-met',
+            0xe7: 'Error-permanent-reply-charging-request-not-accepted',
+            0xe8: 'Error-permanent-reply-charging-forwarding-denied',
+            0xe9: 'Error-permanent-reply-charging-not-supported',
+            0xea: 'Error-permanent-address-hiding-not-supported',
+            0xeb: 'Error-permanent-lack-of-prepaid',
         }
         byte = byte_iter.preview()
         next(byte_iter)
-        # Return error unspecified if it couldn't be decoded
-        return response_status_values.get(byte, 0x81)
+
+        if 0xc5 <= byte <= 0xdf:
+            return 'Error-transient-failure'
+        if 0xec <= byte <= 0xff:
+            return 'Error-permanent-failure'
+
+        # Reserved values are failures
+        return response_status_values.get(byte, 'Error-unspecified')
 
     @staticmethod
     def decode_status_value(byte_iter):
@@ -593,11 +616,14 @@ class MMSDecoder(wsp_pdu.Decoder):
             0x82: 'Rejected',
             0x83: 'Deferred',
             0x84: 'Unrecognised',
+            0x85: 'Indeterminate',
+            0x86: 'Forwarded',
+            0x87: 'Unreachable',
         }
 
         byte = next(byte_iter)
         # Return an unrecognised state if it couldn't be decoded
-        return status_values.get(byte, 0x84)
+        return status_values.get(byte, 'Unrecognised')
 
     @staticmethod
     def decode_expiry_value(byte_iter):
@@ -956,6 +982,33 @@ class MMSEncoder(wsp_pdu.Encoder):
         return encoded_mms_field_name
 
     @staticmethod
+    def encode_boolean_value(value):
+        """
+        Encodes a boolean MMS header value.
+
+        From [4], section 7.2.6::
+
+            Delivery-report-value = Yes | No
+            Yes = <Octet 128>
+            No = <Octet 129>
+
+        A lot of other yes/no fields use this encoding (read-reply,
+        report-allowed, etc)
+
+        :param value: The boolean value to encode
+        :type value: bool
+
+        :raise EncodeError: The specified value is not a boolean
+
+        :return: The encoded boolean value
+        :rtype: list
+        """
+        if not isinstance(value, bool):
+            raise wsp_pdu.EncodeError('Invalid boolean value: %s' % value)
+
+        return [128 if value else 129]
+
+    @staticmethod
     def encode_from_value(from_value=''):
         """
         Encodes the "From" address value
@@ -1073,7 +1126,10 @@ class MMSEncoder(wsp_pdu.Encoder):
             'Rejected': 0x82,
             'Deferred': 0x83,
             'Unrecognised': 0x84,
+            'Indeterminate': 0x85,
+            'Forwarded': 0x86,
+            'Unreachable': 0x87,
         }
 
-        # Return an unrecognised state if it couldn't be decoded
-        return [status_values.get(status_value, 'Unrecognised')]
+        # Return an unrecognised state if it couldn't be encoded
+        return [status_values.get(status_value, 0x84)]
