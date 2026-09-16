@@ -11,6 +11,9 @@ from sys import path
 from os.path import realpath, join, dirname
 from string import ascii_letters, digits
 
+from dbus.mainloop.glib import DBusGMainLoop
+from gi.repository import GLib
+
 topdir = realpath(join(dirname(__file__) + "/.."))
 path.insert(0, topdir)
 
@@ -112,6 +115,34 @@ def get_manager():
 
     return manager
 
+def get_service():
+    bus = dbus.SessionBus()
+    manager = get_manager()
+
+    services = manager.GetServices()
+    if not services:
+        raise RuntimeError("No MMS services available")
+
+    service_path = None
+
+    for entry in services:
+        path = entry[0]
+        properties = entry[1]
+
+        if str(properties.get('Identity', '')) == 'modemmanager':
+            service_path = path
+            break
+
+    if service_path is None:
+        service_path = services[0][0]
+
+    service = dbus.Interface(
+        bus.get_object('org.ofono.mms', service_path),
+        'org.ofono.mms.Service'
+    )
+
+    return service_path, service
+
 def action_info():
     try:
         manager = get_manager()
@@ -149,10 +180,101 @@ def action_set_mms_context_property(prop, value):
     except Exception as e:
         print(f"Failed to set MMS context property: {e}")
 
+def parse_boolean(value):
+    value = value.lower()
+
+    if value in ('1', 'true', 'yes', 'on'):
+        return True
+
+    if value in ('0', 'false', 'no', 'off'):
+        return False
+
+    raise ValueError(f"Invalid boolean value: {value}")
+
+def convert_service_property_value(prop, value):
+    boolean_properties = {
+        'UseDeliveryReports',
+        'AutoCreateSMIL',
+        'ForceCAres'
+    }
+
+    integer_properties = {
+        'TotalMaxAttachmentSize',
+        'MaxAttachments',
+        'NotificationInds'
+    }
+
+    if prop in boolean_properties:
+        return dbus.Boolean(parse_boolean(value))
+
+    if prop in integer_properties:
+        return dbus.Int32(int(value))
+
+    raise ValueError(f"Unknown MMS service property: {prop}")
+
+def action_set_service_property(prop, value):
+    try:
+        service_path, service = get_service()
+        converted_value = convert_service_property_value(prop, value)
+
+        service.SetProperty(
+            dbus.String(prop),
+            converted_value
+        )
+
+        print(f"Set {prop} to {converted_value} on {service_path}")
+    except Exception as e:
+        print(f"Failed to set MMS service property: {e}")
+
+def action_listen():
+    DBusGMainLoop(set_as_default=True)
+
+    bus = dbus.SessionBus()
+
+    def signal_handler(*args, **kwargs):
+        interface = kwargs.get('interface')
+        member = kwargs.get('member')
+        object_path = kwargs.get('path')
+
+        if not interface:
+            return
+
+        if not interface.startswith('org.ofono.mms'):
+            return
+
+        print()
+        print(f"[ {object_path} ] {interface}.{member}")
+
+        if member == 'PropertyChanged' and len(args) >= 2:
+            print(f"    {args[0]} = {args[1]}")
+            return
+
+        for index, arg in enumerate(args):
+            print(f"    arg{index} = {arg}")
+
+    bus.add_signal_receiver(
+        signal_handler,
+        interface_keyword='interface',
+        member_keyword='member',
+        path_keyword='path'
+    )
+
+    print("Listening for org.ofono.mms D-Bus signals...")
+    print("Press Ctrl+C to stop.")
+
+    loop = GLib.MainLoop()
+
+    try:
+        loop.run()
+    except KeyboardInterrupt:
+        print()
+        print("Stopped.")
+
 def main():
     parser = argparse.ArgumentParser(description="MMS control tool")
     sub = parser.add_subparsers(title="action", dest="action")
     sub.add_parser('info', help="Show info about mmsd")
+    sub.add_parser('listen', help="Listen for MMS D-Bus signals")
 
     parser_decode = sub.add_parser('decode', help="Decode a PDU")
     parser_decode.add_argument('--file', '-f', help="File name to decode")
@@ -184,10 +306,35 @@ def main():
         help="MMS context property value"
     )
 
+    parser_setserviceprop = sub.add_parser(
+        'setserviceprop',
+        help="Set an MMS service property"
+    )
+    parser_setserviceprop.add_argument(
+        'property',
+        choices=[
+            'UseDeliveryReports',
+            'AutoCreateSMIL',
+            'TotalMaxAttachmentSize',
+            'MaxAttachments',
+            'NotificationInds',
+            'ForceCAres'
+        ],
+        help="MMS service property name"
+    )
+    parser_setserviceprop.add_argument(
+        'value',
+        help="MMS service property value"
+    )
+
     args = parser.parse_args()
 
     if args.action is None or args.action == "info":
         action_info()
+        return
+
+    if args.action == "listen":
+        action_listen()
         return
 
     if args.action == "decode":
@@ -215,6 +362,10 @@ def main():
 
     if args.action == "setprop":
         action_set_mms_context_property(args.property, args.value)
+        return
+
+    if args.action == "setserviceprop":
+        action_set_service_property(args.property, args.value)
         return
 
 if __name__ == '__main__':
