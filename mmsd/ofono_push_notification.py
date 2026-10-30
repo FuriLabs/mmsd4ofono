@@ -42,6 +42,7 @@ class OfonoPushNotification(ServiceInterface):
         self.update_mms_message = update_mms_message
         self.agent_path = False
         self.registered = False
+        self.registering = False
         self.retry_queue = asyncio.Queue()
         asyncio.create_task(self.retry_failed_requests())
 
@@ -184,24 +185,32 @@ class OfonoPushNotification(ServiceInterface):
             mmsd_print(f"Agent already registered at path {path}", self.verbose)
             return
 
+        if self.registering:
+            mmsd_print(f"Agent registration for path {path} already running", self.verbose)
+            return
+
         sim_present = self.ofono_interface_props['org.ofono.SimManager']['Present'].value
         if not sim_present:
             mmsd_print(f"No SIM present at modem {self.modem_name}", self.verbose)
             return
 
-        while True:
-            try:
-                await self.ofono_interfaces['org.ofono.PushNotification'].call_register_agent(path)
-                break
-            except Exception as e:
-                mmsd_print(f"Failed to register oFono push agent: {e}", self.verbose)
-            await asyncio.sleep(2)
+        self.registering = True
+        try:
+            while True:
+                try:
+                    await self.ofono_interfaces['org.ofono.PushNotification'].call_register_agent(path)
+                    break
+                except Exception as e:
+                    mmsd_print(f"Failed to register oFono push agent: {e}", self.verbose)
+                await asyncio.sleep(2)
 
-        self.bus.export(path, self)
+            self.bus.export(path, self)
 
-        self.agent_path = path
-        self.registered = True
-        mmsd_print(f"Agent Registered at path {path}", self.verbose)
+            self.agent_path = path
+            self.registered = True
+            mmsd_print(f"Agent Registered at path {path}", self.verbose)
+        finally:
+            self.registering = False
 
     async def UnregisterAgent(self, path: 'o'):
         if not self.registered:
@@ -250,6 +259,14 @@ class OfonoPushNotification(ServiceInterface):
     @method()
     def Release(self):
         mmsd_print(f"Agent released on path {self.agent_path}", self.verbose)
+        self.registered = False
+        self.bus.unexport(self.agent_path)
+
+    def drop_registration(self):
+        if not self.registered:
+            return
+
+        mmsd_print(f"Dropping agent registration on path {self.agent_path}", self.verbose)
         self.registered = False
         self.bus.unexport(self.agent_path)
 
