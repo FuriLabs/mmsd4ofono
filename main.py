@@ -14,7 +14,7 @@ from dbus_fast.aio import MessageBus
 from dbus_fast.service import ServiceInterface, method, signal
 from dbus_fast import DBusError, BusType, Variant
 
-from mmsd import OfonoMMSServiceInterface, OfonoMMSModemManagerInterface, OfonoMMSMessageInterface, OfonoPushNotification, Ofono, DBus
+from mmsd import OfonoMMSServiceInterface, OfonoMMSModemManagerInterface, OfonoMMSMessageInterface, OfonoPushNotification, MMSContext, Ofono, DBus
 from mmsd.logging import mmsd_print
 from mmsd.utils import sanitize_dbus_string
 
@@ -44,6 +44,7 @@ class OfonoMMSManagerInterface(ServiceInterface):
         self.ofono_push_notification_interface = False
         self.already_exported = False
         self.activation_task = None
+        self.mms_context = MMSContext(self.activate_mms_context, self.deactivate_mms_context, verbose)
         self.context_property_setting = False
         self.mms_dir = expanduser("~/.mms/modemmanager")
         makedirs(self.mms_dir, exist_ok=True)
@@ -347,6 +348,7 @@ class OfonoMMSManagerInterface(ServiceInterface):
                 self.ofono_mms_modemmanager_interface,
                 self.export_mms_message,
                 self.update_mms_message,
+                self.mms_context,
                 path,
                 self.verbose
             )
@@ -382,6 +384,7 @@ class OfonoMMSManagerInterface(ServiceInterface):
                 self.mms_dir,
                 self.export_mms_message,
                 self.update_mms_message,
+                self.mms_context,
                 path,
                 self.verbose
             )
@@ -414,8 +417,12 @@ class OfonoMMSManagerInterface(ServiceInterface):
                 if name.lower() == "mms":
                     ctx_path = ctx[0]
                     ctx_interface = self.ofono_client["ofono_context"][ctx_path]['org.ofono.ConnectionContext']
-                    self.activation_task = self.loop.create_task(self.force_activate_context())
                     ctx_interface.on_property_changed(self.context_active_changed)
+
+                    settings = ctx[1].get('Settings', Variant('a{sv}', {})).value
+                    if self.mms_context.settings_carry_interface(settings):
+                        self.mms_context.ready.set()
+                        self.mms_context.schedule_teardown()
         except Exception as e:
             mmsd_print(f"Failed to set up MMS context monitoring: {e}", self.verbose)
 
@@ -520,8 +527,10 @@ class OfonoMMSManagerInterface(ServiceInterface):
 
     async def context_active_changed(self, prop, propvalue):
         mmsd_print(f"property: {prop}, value: {propvalue}", self.verbose)
+        self.mms_context.context_changed(prop, propvalue)
+
         if prop == "Active" and not self.context_property_setting:
-            if propvalue.value == False:
+            if propvalue.value == False and self.mms_context.wants_context():
                 mmsd_print("oFono MMS connection dropped while we still need it, reactivating context", self.verbose)
                 if self.activation_task and not self.activation_task.done():
                     self.activation_task.cancel()
@@ -567,6 +576,19 @@ class OfonoMMSManagerInterface(ServiceInterface):
         except Exception as e:
             mmsd_print(f"Failed to activate MMS context: {e}", self.verbose)
             return False
+
+    async def deactivate_mms_context(self):
+        try:
+            contexts = await self.ofono_interfaces['org.ofono.ConnectionManager'].call_get_contexts()
+            for ctx in contexts:
+                if ctx[1].get('Type', Variant('s', '')).value.lower() != "mms":
+                    continue
+
+                ctx_interface = self.ofono_client["ofono_context"][ctx[0]]["org.ofono.ConnectionContext"]
+                await ctx_interface.call_set_property("Active", Variant('b', False))
+                return
+        except Exception as e:
+            mmsd_print(f"Failed to deactivate MMS context: {e}", self.verbose)
 
     def ofono_modem_removed(self, path):
         mmsd_print(f"oFono modem removed at path {path}", self.verbose)

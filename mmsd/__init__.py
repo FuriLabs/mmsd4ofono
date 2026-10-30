@@ -6,6 +6,7 @@ from .ofono_mms_modemmanager import *
 from .ofono_mms_message import *
 from .ofono_push_notification import *
 from .ofono import *
+from .mms_context import *
 
 __all__ = [
 	"OfonoMMSServiceInterface",
@@ -13,4 +14,5 @@ __all__ = [
 	"OfonoMMSMessageInterface",
 	"OfonoPushNotification",
 	"Ofono",
+	"MMSContext",
 ]

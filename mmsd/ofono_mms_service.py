@@ -24,7 +24,7 @@ from mmsd.utils import resolve_host
 from mmsdecoder.message import MMSMessage, MMSMessagePage, DataPart
 
 class OfonoMMSServiceInterface(ServiceInterface):
-    def __init__(self, mms_dir, ofono_mms_modemmanager_interface, export_mms_message, update_mms_message, path, verbose=False):
+    def __init__(self, mms_dir, ofono_mms_modemmanager_interface, export_mms_message, update_mms_message, mms_context, path, verbose=False):
         super().__init__('org.ofono.mms.Service')
         self.modem_name = path
         mmsd_print("Initializing MMS Service interface", verbose)
@@ -33,6 +33,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
         self.ofono_mms_modemmanager_interface = ofono_mms_modemmanager_interface
         self.export_mms_message = export_mms_message
         self.update_mms_message = update_mms_message
+        self.mms_context = mms_context
         self.mms_config_file = join(self.mms_dir, 'mms')
         self.messages = []
         self.props = {
@@ -124,7 +125,14 @@ class OfonoMMSServiceInterface(ServiceInterface):
         return mms, payload, smil, transaction_id
 
     async def send_message_wrapper(self, payload, uuid):
-        await self.send_message(payload, uuid)
+        if not await self.mms_context.acquire():
+            mmsd_print(f"MMS context is not available, cannot send {uuid}", self.verbose)
+            return
+
+        try:
+            await self.send_message(payload, uuid)
+        finally:
+            await self.mms_context.release()
 
     def update_message_status_file(self, uuid, updates):
         status_path = join(self.mms_dir, f"{uuid}.status")
