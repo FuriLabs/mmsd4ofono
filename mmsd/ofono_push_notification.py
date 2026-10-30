@@ -29,7 +29,7 @@ CONNECT_TIMEOUT = 8
 FETCH_TIMEOUT = 120
 
 class OfonoPushNotification(ServiceInterface):
-    def __init__(self, bus, ofono_interfaces, ofono_interface_props, mms_dir, export_mms_message, update_mms_message, path, verbose=False):
+    def __init__(self, bus, ofono_interfaces, ofono_interface_props, mms_dir, export_mms_message, update_mms_message, mms_context, path, verbose=False):
         super().__init__("org.ofono.PushNotificationAgent")
         self.modem_name = path
         mmsd_print("Initializing oFono push notification agent interface", verbose)
@@ -40,6 +40,7 @@ class OfonoPushNotification(ServiceInterface):
         self.mms_dir = mms_dir
         self.export_mms_message = export_mms_message
         self.update_mms_message = update_mms_message
+        self.mms_context = mms_context
         self.agent_path = False
         self.registered = False
         self.retry_queue = asyncio.Queue()
@@ -371,10 +372,15 @@ class OfonoPushNotification(ServiceInterface):
             url_parts = urlparse(url)
             candidate_urls = [url]
 
+        if not await self.mms_context.acquire():
+            mmsd_print("MMS context is not available, cannot fetch", self.verbose)
+            return None
+
         if not await setup_mms_routes(needed_ips):
             mmsd_print("Failed to setup MMS routes", self.verbose)
 
             # Daemon cleans up after itself on failure, so we don't need to do anything here
+            await self.mms_context.release()
             return None
 
         try:
@@ -416,6 +422,7 @@ class OfonoPushNotification(ServiceInterface):
                 return None
         finally:
             await cleanup_mms_routes()
+            await self.mms_context.release()
 
     def process_mms_content(self, content, transaction_id, sender, info):
         uuid = str(uuid4()).replace('-', '1')
