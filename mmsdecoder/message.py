@@ -186,7 +186,6 @@ class MMSMessage:
                     audio_node.setAttribute('begin', str(begin))
                     audio_node.setAttribute('end', str(end))
 
-                par_node.appendChild(text_node)
                 par_node.appendChild(audio_node)
 
             body_node.appendChild(par_node)
