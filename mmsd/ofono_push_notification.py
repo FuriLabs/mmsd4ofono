@@ -347,6 +347,7 @@ class OfonoPushNotification(ServiceInterface):
             candidate_proxies = [f"{chr(91) + ip + chr(93) if chr(58) in ip else ip}:{proxy_port}" for ip in proxy_ips]
 
         if not proxy:
+            candidate_proxies = [None]
             url_parts = urlparse(url)
             url_ips = await resolve_host(url_parts.hostname, self.verbose)
             if not url_ips:
@@ -369,7 +370,6 @@ class OfonoPushNotification(ServiceInterface):
         else:
             url_parts = urlparse(url)
             candidate_urls = [url]
-            candidate_proxies = [None]
 
         if not await setup_mms_routes(needed_ips):
             mmsd_print("Failed to setup MMS routes", self.verbose)
