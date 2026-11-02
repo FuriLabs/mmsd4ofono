@@ -344,6 +344,7 @@ class OfonoPushNotification(ServiceInterface):
             # IPv6 literals must be bracketed in a URL host component (RFC 3986 3.2.2)
             proxy_host_bracketed = f"[{proxy_ips[0]}]" if ":" in proxy_ips[0] else proxy_ips[0]
             resolved_proxy = f"{proxy_host_bracketed}:{proxy_port}"
+            candidate_proxies = [f"{chr(91) + ip + chr(93) if chr(58) in ip else ip}:{proxy_port}" for ip in proxy_ips]
 
         if not proxy:
             url_parts = urlparse(url)
@@ -368,6 +369,7 @@ class OfonoPushNotification(ServiceInterface):
         else:
             url_parts = urlparse(url)
             candidate_urls = [url]
+            candidate_proxies = [None]
 
         if not await setup_mms_routes(needed_ips):
             mmsd_print("Failed to setup MMS routes", self.verbose)
@@ -384,30 +386,32 @@ class OfonoPushNotification(ServiceInterface):
                 # Set Host header to original hostname - some carriers don't like it when you GET by IP
                 headers = {'Host': url_parts.netloc}
 
-                for resolved_url in candidate_urls:
-                    try:
-                        mmsd_print(f"Fetching URL: {resolved_url} using proxy: {resolved_proxy}", self.verbose)
+                for current_proxy in candidate_proxies:
+                    for resolved_url in candidate_urls:
+                        for attempt in range(3):
+                            try:
+                                mmsd_print(f"Fetching URL: {resolved_url} using proxy: {current_proxy} (attempt {attempt + 1}/3)", self.verbose)
 
-                        if resolved_proxy:
-                            request = session.get(
-                                resolved_url,
-                                proxy=f"http://{resolved_proxy}",
-                                headers=headers
-                            )
-                        else:
-                            request = session.get(resolved_url, headers=headers)
+                                if current_proxy:
+                                    request = session.get(
+                                        resolved_url,
+                                        proxy=f"http://{current_proxy}",
+                                        headers=headers
+                                    )
+                                else:
+                                    request = session.get(resolved_url, headers=headers)
 
-                        async with request as response:
-                            mmsd_print(f"Response status: {response.status}", self.verbose)
-                            if response.status == 200:
-                                content = await response.read()
-                                mmsd_print(f"Content length: {len(content)}", self.verbose)
-                                return content
-                            mmsd_print(f"Failed to fetch content. HTTP status: {response.status}", self.verbose)
-                    except Exception as e:
-                        # Try the next candidate rather than giving up: the remaining
-                        # addresses may be reachable by a path this one is not.
-                        mmsd_print(f"Failed to download MMS content: {e}", self.verbose)
+                                async with request as response:
+                                    mmsd_print(f"Response status: {response.status}", self.verbose)
+                                    if response.status == 200:
+                                        content = await response.read()
+                                        mmsd_print(f"Content length: {len(content)}", self.verbose)
+                                        return content
+                                    mmsd_print(f"Failed to fetch content. HTTP status: {response.status}", self.verbose)
+                            except Exception as e:
+                                mmsd_print(f"Failed to download MMS content: {e}", self.verbose)
+                            if attempt < 2:
+                                await asyncio.sleep(5)
 
                 return None
         finally:

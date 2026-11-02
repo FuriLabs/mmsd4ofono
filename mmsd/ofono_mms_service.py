@@ -11,7 +11,7 @@ from uuid import uuid4
 from re import sub
 import asyncio
 
-from aiohttp import ClientSession
+from aiohttp import ClientSession, ClientTimeout
 
 from dbus_fast.service import ServiceInterface, method, dbus_property, signal
 from dbus_fast.constants import PropertyAccess
@@ -217,6 +217,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
                     # IPv6 literals must be bracketed in a URL host component (RFC 3986 3.2.2)
                     proxy_host = f"[{proxy_ips[0]}]" if ":" in proxy_ips[0] else proxy_ips[0]
                     resolved_proxy = f"{proxy_host}:{proxy_port}"
+                    candidate_ips = proxy_ips
 
                 url_parts = urlparse(mmsc)
 
@@ -233,6 +234,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
                     resolved_url = url_parts._replace(
                         netloc=resolved_host + (f":{url_parts.port}" if url_parts.port else "")
                     ).geturl()
+                    candidate_ips = url_ips
                 else:
                     # Leave the URL as is, the proxy will deal with it (hopefully)
                     resolved_url = mmsc
@@ -245,44 +247,56 @@ class OfonoMMSServiceInterface(ServiceInterface):
                 # payload is an array('B', [...]), convert it to bytes
                 payload = payload if isinstance(payload, bytes) else payload.tobytes()
 
-                async with ClientSession() as session:
-                    try:
-                         mmsd_print(f"Sending message to: {resolved_url} using proxy: {resolved_proxy}", self.verbose)
+                async with ClientSession(timeout=ClientTimeout(sock_connect=8, total=120)) as session:
+                    headers = {
+                        'Host': url_parts.netloc,
+                        'Content-Type': 'application/vnd.wap.mms-message',
+                        'User-Agent': 'Android MmsLib/1.0',
+                        'Connection': 'Keep-Alive',
+                    }
+                    sent = False
+                    for ip in candidate_ips:
+                        host = f"[{ip}]" if ":" in ip else ip
+                        if proxy:
+                            current_proxy = f"{host}:{proxy_port}"
+                            current_url = resolved_url
+                        else:
+                            current_proxy = None
+                            current_url = url_parts._replace(
+                                netloc=host + (f":{url_parts.port}" if url_parts.port else "")
+                            ).geturl()
 
-                         headers = {
-                             'Host': url_parts.netloc,
-                             'Content-Type': 'application/vnd.wap.mms-message',
-                             'User-Agent': 'Android MmsLib/1.0',
-                             'Connection': 'Keep-Alive',
-                         }
+                        for attempt in range(3):
+                            try:
+                                mmsd_print(f"Sending message to: {current_url} using proxy: {current_proxy} (attempt {attempt + 1}/3)", self.verbose)
+                                if current_proxy:
+                                    request = session.post(
+                                        current_url, proxy=f"http://{current_proxy}",
+                                        headers=headers, data=payload,
+                                        skip_auto_headers=['User-Agent']
+                                    )
+                                else:
+                                    request = session.post(current_url, headers=headers, data=bytes(payload))
 
-                         if resolved_proxy:
-                             async with session.post(
-                                 resolved_url,
-                                 proxy=f"http://{resolved_proxy}",
-                                 headers=headers,
-                                 data=payload,
-                                 skip_auto_headers=['User-Agent']
-                             ) as response:
-                                mmsd_print(f"Response status: {response.status}", self.verbose)
-                                response.raise_for_status()
-                                response_body = await response.read()
-                         else:
-                             async with session.post(
-                                 resolved_url,
-                                 headers=headers,
-                                 data=bytes(payload)
-                             ) as response:
-                                 mmsd_print(f"Response status: {response.status}", self.verbose)
-                                 response.raise_for_status()
-                                 response_body = await response.read()
+                                async with request as response:
+                                    mmsd_print(f"Response status: {response.status}", self.verbose)
+                                    response.raise_for_status()
+                                    response_body = await response.read()
 
-                         if self.process_send_conf(response_body, uuid):
-                             mmsd_print(f"Message {uuid} sent successfully", self.verbose)
-                         break
-                    except Exception as e:
-                        mmsd_print(f"Error sending message: {str(e)}. Retrying...", self.verbose)
-                        await asyncio.sleep(5)
+                                if self.process_send_conf(response_body, uuid):
+                                    mmsd_print(f"Message {uuid} sent successfully", self.verbose)
+                                sent = True
+                                break
+                            except Exception as e:
+                                mmsd_print(f"Error sending message: {e}", self.verbose)
+                                if attempt < 2:
+                                    await asyncio.sleep(5)
+                        if sent:
+                            break
+                    if sent:
+                        break
+                    mmsd_print("All MMS addresses failed", self.verbose)
+                    break
             finally:
                 await cleanup_mms_routes()
 
