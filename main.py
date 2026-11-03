@@ -668,6 +668,9 @@ class OfonoMMSManagerInterface(ServiceInterface):
         if self.ofono_mms_modemmanager_interface:
             await self.ofono_mms_modemmanager_interface.set_props()
 
+        if iface == 'org.ofono.PushNotification' and self.ofono_push_notification_interface:
+            self.loop.create_task(self.ofono_push_notification_interface.RegisterAgent('/mmsd'))
+
     async def remove_ofono_interface(self, iface):
         mmsd_print(f"Remove oFono interface for iface {iface}", self.verbose)
 
@@ -682,6 +685,9 @@ class OfonoMMSManagerInterface(ServiceInterface):
 
         if self.ofono_push_notification_interface:
             self.ofono_push_notification_interface.ofono_interface_props = self.ofono_interface_props.copy()
+
+            if iface == 'org.ofono.PushNotification':
+                self.ofono_push_notification_interface.drop_registration()
 
 def get_version():
     return "1.3.2"
