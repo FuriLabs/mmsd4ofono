@@ -23,6 +23,14 @@ from mmsd.route_controller import cleanup_mms_routes, setup_mms_routes
 from mmsd.utils import resolve_host
 from mmsdecoder.message import MMSMessage, MMSMessagePage, DataPart
 
+# a dead bearer otherwise costs the OS connect timeout, about 30s
+CONNECT_TIMEOUT = 8
+# the upload needs room, messages run to hundreds of kilobytes
+SEND_TIMEOUT = 120
+# retrying forever leaves the message reported as sent while it never arrives
+SEND_ATTEMPTS = 5
+ADDRESS_ATTEMPTS = 3
+
 class OfonoMMSServiceInterface(ServiceInterface):
     def __init__(self, mms_dir, ofono_mms_modemmanager_interface, export_mms_message, update_mms_message, path, verbose=False):
         super().__init__('org.ofono.mms.Service')
@@ -188,14 +196,17 @@ class OfonoMMSServiceInterface(ServiceInterface):
         if response_text:
             properties['ResponseText'] = Variant('s', str(response_text))
 
-        self.update_message_status_file(uuid, {'state': 'sending_failed'})
-        self.update_mms_message(uuid, {'Status': Variant('s', 'sending_failed')})
-        self.MessageSendError(properties)
+        self.report_send_failure(uuid, properties)
         mmsd_print(f"MMSC rejected message {uuid}: {response_status}", self.verbose)
         return False
 
+    def report_send_failure(self, uuid, properties):
+        self.update_message_status_file(uuid, {'state': 'sending_failed'})
+        self.update_mms_message(uuid, {'Status': Variant('s', 'sending_failed')})
+        self.MessageSendError(properties)
+
     async def send_message(self, payload, uuid):
-        while True:
+        for _ in range(SEND_ATTEMPTS):
             try:
                 mmsc = self.ofono_mms_modemmanager_interface.props['CarrierMMSC'].value
                 proxy = self.ofono_mms_modemmanager_interface.props.get('CarrierMMSProxy', {}).value
@@ -247,7 +258,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
                 # payload is an array('B', [...]), convert it to bytes
                 payload = payload if isinstance(payload, bytes) else payload.tobytes()
 
-                async with ClientSession(timeout=ClientTimeout(sock_connect=8, total=120)) as session:
+                async with ClientSession(timeout=ClientTimeout(sock_connect=CONNECT_TIMEOUT, total=SEND_TIMEOUT)) as session:
                     headers = {
                         'Host': url_parts.netloc,
                         'Content-Type': 'application/vnd.wap.mms-message',
@@ -266,9 +277,9 @@ class OfonoMMSServiceInterface(ServiceInterface):
                                 netloc=host + (f":{url_parts.port}" if url_parts.port else "")
                             ).geturl()
 
-                        for attempt in range(3):
+                        for attempt in range(ADDRESS_ATTEMPTS):
                             try:
-                                mmsd_print(f"Sending message to: {current_url} using proxy: {current_proxy} (attempt {attempt + 1}/3)", self.verbose)
+                                mmsd_print(f"Sending message to: {current_url} using proxy: {current_proxy} (attempt {attempt + 1}/{ADDRESS_ATTEMPTS})", self.verbose)
                                 if current_proxy:
                                     request = session.post(
                                         current_url, proxy=f"http://{current_proxy}",
@@ -289,16 +300,24 @@ class OfonoMMSServiceInterface(ServiceInterface):
                                 break
                             except Exception as e:
                                 mmsd_print(f"Error sending message: {e}", self.verbose)
-                                if attempt < 2:
+                                if attempt < ADDRESS_ATTEMPTS - 1:
                                     await asyncio.sleep(5)
                         if sent:
                             break
                     if sent:
-                        break
+                        return
                     mmsd_print("All MMS addresses failed", self.verbose)
                     break
             finally:
                 await cleanup_mms_routes()
+
+        properties = {
+            'UUID': Variant('s', uuid),
+            'ResponseStatus': Variant('s', 'Error-transient-network-problem'),
+        }
+
+        self.report_send_failure(uuid, properties)
+        mmsd_print(f"Giving up on message {uuid}", self.verbose)
 
     def load_settings_from_file(self):
         if not exists(self.mms_config_file):
