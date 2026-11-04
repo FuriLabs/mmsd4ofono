@@ -127,6 +127,10 @@ class OfonoMMSServiceInterface(ServiceInterface):
     async def send_message_wrapper(self, payload, uuid):
         if not await self.mms_context.acquire():
             mmsd_print(f"MMS context is not available, cannot send {uuid}", self.verbose)
+            self.report_send_failure(uuid, {
+                'UUID': Variant('s', uuid),
+                'ResponseStatus': Variant('s', 'Error-transient-network-problem'),
+            })
             return
 
         try:
