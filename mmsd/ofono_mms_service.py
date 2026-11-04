@@ -202,6 +202,10 @@ class OfonoMMSServiceInterface(ServiceInterface):
         mmsd_print(f"MMSC rejected message {uuid}: {response_status}", self.verbose)
         return False
 
+    def report_send_result(self, uuid, state):
+        self.update_message_status_file(uuid, {'state': state})
+        self.update_mms_message(uuid, {'Status': Variant('s', state)})
+
     def report_send_failure(self, uuid, properties):
         self.update_message_status_file(uuid, {'state': 'sending_failed'})
         self.update_mms_message(uuid, {'Status': Variant('s', 'sending_failed')})
@@ -297,6 +301,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
                                     response_body = await response.read()
 
                                 if self.process_send_conf(response_body, uuid):
+                                    self.report_send_result(uuid, 'sent')
                                     mmsd_print(f"Message {uuid} sent successfully", self.verbose)
                                 sent = True
                                 break
@@ -411,7 +416,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
         with open(status_path, 'w', encoding='utf-8') as status_file:
             status_file.write("[info]\n")
             status_file.write("read=false\n")
-            status_file.write("state=sent\n")
+            status_file.write("state=sending\n")
             status_file.write(f"id={transaction_id}\n")
             status_file.write(f"date={date}\n")
             status_file.write(f"delivery_report={str(delivery_report).lower()}\n")
@@ -449,7 +454,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
         self.create_message_files(payload, uuid, date, transaction_id, delivery_report, delivery_status)
         object_path = self.export_mms_message(
             uuid,
-            'sent',
+            'sending',
             date,
             self.ofono_mms_modemmanager_interface.props['ModemNumber'].value,
             delivery_report,
