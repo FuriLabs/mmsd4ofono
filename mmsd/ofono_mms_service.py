@@ -24,12 +24,14 @@ from mmsd.utils import resolve_host
 from mmsdecoder.message import MMSMessage, MMSMessagePage, DataPart
 
 # a dead bearer otherwise costs the OS connect timeout, about 30s
-CONNECT_TIMEOUT = 8
+CONNECT_TIMEOUT = 10
 # the upload needs room, messages run to hundreds of kilobytes
 SEND_TIMEOUT = 120
-# retrying forever leaves the message reported as sent while it never arrives
-SEND_ATTEMPTS = 5
+# the loop this bounds only retries name resolution, not the send itself
+RESOLVE_ATTEMPTS = 5
+# a hung MMSC burns SEND_TIMEOUT per try, so the count sets the worst case
 ADDRESS_ATTEMPTS = 3
+RETRY_DELAY = 5
 
 class OfonoMMSServiceInterface(ServiceInterface):
     def __init__(self, mms_dir, ofono_mms_modemmanager_interface, export_mms_message, update_mms_message, path, verbose=False):
@@ -206,7 +208,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
         self.MessageSendError(properties)
 
     async def send_message(self, payload, uuid):
-        for _ in range(SEND_ATTEMPTS):
+        for _ in range(RESOLVE_ATTEMPTS):
             try:
                 mmsc = self.ofono_mms_modemmanager_interface.props['CarrierMMSC'].value
                 proxy = self.ofono_mms_modemmanager_interface.props.get('CarrierMMSProxy', {}).value
@@ -219,7 +221,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
                     proxy_ips = await resolve_host(proxy_host, self.verbose)
                     if not proxy_ips:
                          mmsd_print(f"Failed to resolve proxy host: {proxy_host}", self.verbose)
-                         await asyncio.sleep(5)
+                         await asyncio.sleep(RETRY_DELAY)
                          continue
 
                     needed_ips.extend(proxy_ips)
@@ -236,7 +238,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
                     url_ips = await resolve_host(url_parts.hostname, self.verbose)
                     if not url_ips:
                         mmsd_print(f"Failed to resolve URL host: {url_parts.hostname}", self.verbose)
-                        await asyncio.sleep(5)
+                        await asyncio.sleep(RETRY_DELAY)
                         continue
                     needed_ips.extend(url_ips)
 
@@ -252,7 +254,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
 
                 if not await setup_mms_routes(needed_ips):
                     mmsd_print("Failed to setup MMS routes, retrying...", self.verbose)
-                    await asyncio.sleep(5)
+                    await asyncio.sleep(RETRY_DELAY)
                     continue
 
                 # payload is an array('B', [...]), convert it to bytes
@@ -301,7 +303,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
                             except Exception as e:
                                 mmsd_print(f"Error sending message: {e}", self.verbose)
                                 if attempt < ADDRESS_ATTEMPTS - 1:
-                                    await asyncio.sleep(5)
+                                    await asyncio.sleep(RETRY_DELAY)
                         if sent:
                             break
                     if sent:
