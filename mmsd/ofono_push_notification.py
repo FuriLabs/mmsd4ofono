@@ -23,6 +23,9 @@ from mmsdecoder.message import MMSMessage
 # An unreachable MMSC address otherwise costs the OS connect timeout - about
 # 30s observed - before the next candidate is tried, which is long enough to
 # make a working fallback look like a failed fetch.
+# oFono releases the agent just before it tears the interface down, so wait
+# long enough to tell that apart from a release the interface outlives
+RELEASE_SETTLE = 3
 CONNECT_TIMEOUT = 8
 # The transfer itself needs room: messages run to hundreds of kilobytes and
 # may cross a CLAT.
@@ -259,8 +262,23 @@ class OfonoPushNotification(ServiceInterface):
     @method()
     def Release(self):
         mmsd_print(f"Agent released on path {self.agent_path}", self.verbose)
+        path = self.agent_path
         self.registered = False
-        self.bus.unexport(self.agent_path)
+        self.bus.unexport(path)
+        asyncio.get_event_loop().create_task(self.register_after_release(path))
+
+    async def register_after_release(self, path):
+        await asyncio.sleep(RELEASE_SETTLE)
+
+        if self.registered:
+            return
+
+        if 'org.ofono.PushNotification' not in self.ofono_interfaces:
+            mmsd_print("Push interface went away after the release, leaving it", self.verbose)
+            return
+
+        mmsd_print(f"Still have the push interface after the release, registering again on {path}", self.verbose)
+        await self.RegisterAgent(path)
 
     def drop_registration(self):
         if not self.registered:
