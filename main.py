@@ -440,7 +440,7 @@ class OfonoMMSManagerInterface(ServiceInterface):
             'Attachments': Variant('a(ssstt)', attachments)
         }
 
-        if status == 'sent':
+        if status in ('sent', 'sending'):
             props_array['Status'] = Variant('s', 'draft')
 
         ofono_mms_message.update_properties(props_array)
@@ -453,7 +453,7 @@ class OfonoMMSManagerInterface(ServiceInterface):
         self.ofono_mms_service_interface.messages.append([object_path, props_array])
         self.ofono_mms_service_interface.MessageAdded(object_path, props_array)
 
-        if status == 'sent':
+        if status in ('sent', 'sending'):
             props_array['Status'] = Variant('s', status)
 
         ofono_mms_message.update_properties(props_array)

@@ -23,6 +23,16 @@ from mmsd.route_controller import cleanup_mms_routes, setup_mms_routes
 from mmsd.utils import resolve_host
 from mmsdecoder.message import MMSMessage, MMSMessagePage, DataPart
 
+# a dead bearer otherwise costs the OS connect timeout, about 30s
+CONNECT_TIMEOUT = 10
+# the upload needs room, messages run to hundreds of kilobytes
+SEND_TIMEOUT = 120
+# the loop this bounds only retries name resolution, not the send itself
+RESOLVE_ATTEMPTS = 5
+# a hung MMSC burns SEND_TIMEOUT per try, so the count sets the worst case
+ADDRESS_ATTEMPTS = 3
+RETRY_DELAY = 5
+
 class OfonoMMSServiceInterface(ServiceInterface):
     def __init__(self, mms_dir, ofono_mms_modemmanager_interface, export_mms_message, update_mms_message, path, verbose=False):
         super().__init__('org.ofono.mms.Service')
@@ -188,14 +198,21 @@ class OfonoMMSServiceInterface(ServiceInterface):
         if response_text:
             properties['ResponseText'] = Variant('s', str(response_text))
 
-        self.update_message_status_file(uuid, {'state': 'sending_failed'})
-        self.update_mms_message(uuid, {'Status': Variant('s', 'sending_failed')})
-        self.MessageSendError(properties)
+        self.report_send_failure(uuid, properties)
         mmsd_print(f"MMSC rejected message {uuid}: {response_status}", self.verbose)
         return False
 
+    def report_send_result(self, uuid, state):
+        self.update_message_status_file(uuid, {'state': state})
+        self.update_mms_message(uuid, {'Status': Variant('s', state)})
+
+    def report_send_failure(self, uuid, properties):
+        self.update_message_status_file(uuid, {'state': 'sending_failed'})
+        self.update_mms_message(uuid, {'Status': Variant('s', 'sending_failed')})
+        self.MessageSendError(properties)
+
     async def send_message(self, payload, uuid):
-        while True:
+        for _ in range(RESOLVE_ATTEMPTS):
             try:
                 mmsc = self.ofono_mms_modemmanager_interface.props['CarrierMMSC'].value
                 proxy = self.ofono_mms_modemmanager_interface.props.get('CarrierMMSProxy', {}).value
@@ -208,7 +225,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
                     proxy_ips = await resolve_host(proxy_host, self.verbose)
                     if not proxy_ips:
                          mmsd_print(f"Failed to resolve proxy host: {proxy_host}", self.verbose)
-                         await asyncio.sleep(5)
+                         await asyncio.sleep(RETRY_DELAY)
                          continue
 
                     needed_ips.extend(proxy_ips)
@@ -225,7 +242,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
                     url_ips = await resolve_host(url_parts.hostname, self.verbose)
                     if not url_ips:
                         mmsd_print(f"Failed to resolve URL host: {url_parts.hostname}", self.verbose)
-                        await asyncio.sleep(5)
+                        await asyncio.sleep(RETRY_DELAY)
                         continue
                     needed_ips.extend(url_ips)
 
@@ -241,13 +258,13 @@ class OfonoMMSServiceInterface(ServiceInterface):
 
                 if not await setup_mms_routes(needed_ips):
                     mmsd_print("Failed to setup MMS routes, retrying...", self.verbose)
-                    await asyncio.sleep(5)
+                    await asyncio.sleep(RETRY_DELAY)
                     continue
 
                 # payload is an array('B', [...]), convert it to bytes
                 payload = payload if isinstance(payload, bytes) else payload.tobytes()
 
-                async with ClientSession(timeout=ClientTimeout(sock_connect=8, total=120)) as session:
+                async with ClientSession(timeout=ClientTimeout(sock_connect=CONNECT_TIMEOUT, total=SEND_TIMEOUT)) as session:
                     headers = {
                         'Host': url_parts.netloc,
                         'Content-Type': 'application/vnd.wap.mms-message',
@@ -266,9 +283,9 @@ class OfonoMMSServiceInterface(ServiceInterface):
                                 netloc=host + (f":{url_parts.port}" if url_parts.port else "")
                             ).geturl()
 
-                        for attempt in range(3):
+                        for attempt in range(ADDRESS_ATTEMPTS):
                             try:
-                                mmsd_print(f"Sending message to: {current_url} using proxy: {current_proxy} (attempt {attempt + 1}/3)", self.verbose)
+                                mmsd_print(f"Sending message to: {current_url} using proxy: {current_proxy} (attempt {attempt + 1}/{ADDRESS_ATTEMPTS})", self.verbose)
                                 if current_proxy:
                                     request = session.post(
                                         current_url, proxy=f"http://{current_proxy}",
@@ -284,21 +301,30 @@ class OfonoMMSServiceInterface(ServiceInterface):
                                     response_body = await response.read()
 
                                 if self.process_send_conf(response_body, uuid):
+                                    self.report_send_result(uuid, 'sent')
                                     mmsd_print(f"Message {uuid} sent successfully", self.verbose)
                                 sent = True
                                 break
                             except Exception as e:
                                 mmsd_print(f"Error sending message: {e}", self.verbose)
-                                if attempt < 2:
-                                    await asyncio.sleep(5)
+                                if attempt < ADDRESS_ATTEMPTS - 1:
+                                    await asyncio.sleep(RETRY_DELAY)
                         if sent:
                             break
                     if sent:
-                        break
+                        return
                     mmsd_print("All MMS addresses failed", self.verbose)
                     break
             finally:
                 await cleanup_mms_routes()
+
+        properties = {
+            'UUID': Variant('s', uuid),
+            'ResponseStatus': Variant('s', 'Error-transient-network-problem'),
+        }
+
+        self.report_send_failure(uuid, properties)
+        mmsd_print(f"Giving up on message {uuid}", self.verbose)
 
     def load_settings_from_file(self):
         if not exists(self.mms_config_file):
@@ -390,7 +416,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
         with open(status_path, 'w', encoding='utf-8') as status_file:
             status_file.write("[info]\n")
             status_file.write("read=false\n")
-            status_file.write("state=sent\n")
+            status_file.write("state=sending\n")
             status_file.write(f"id={transaction_id}\n")
             status_file.write(f"date={date}\n")
             status_file.write(f"delivery_report={str(delivery_report).lower()}\n")
@@ -428,7 +454,7 @@ class OfonoMMSServiceInterface(ServiceInterface):
         self.create_message_files(payload, uuid, date, transaction_id, delivery_report, delivery_status)
         object_path = self.export_mms_message(
             uuid,
-            'sent',
+            'sending',
             date,
             self.ofono_mms_modemmanager_interface.props['ModemNumber'].value,
             delivery_report,
