@@ -14,7 +14,7 @@ from dbus_fast.aio import MessageBus
 from dbus_fast.service import ServiceInterface, method, signal
 from dbus_fast import DBusError, BusType, Variant
 
-from mmsd import OfonoMMSServiceInterface, OfonoMMSModemManagerInterface, OfonoMMSMessageInterface, OfonoPushNotification, Ofono, DBus
+from mmsd import OfonoMMSServiceInterface, OfonoMMSModemManagerInterface, OfonoMMSMessageInterface, OfonoPushNotification, MMSContext, Ofono, DBus
 from mmsd.logging import mmsd_print
 from mmsd.utils import sanitize_dbus_string
 
@@ -43,8 +43,7 @@ class OfonoMMSManagerInterface(ServiceInterface):
         self.ofono_mms_modemmanager_interface = False
         self.ofono_push_notification_interface = False
         self.already_exported = False
-        self.activation_task = None
-        self.context_property_setting = False
+        self.mms_context = MMSContext(self.activate_mms_context, self.deactivate_mms_context, verbose)
         self.mms_dir = expanduser("~/.mms/modemmanager")
         makedirs(self.mms_dir, exist_ok=True)
         self.loop.create_task(self.check_ofono_presence())
@@ -112,16 +111,6 @@ class OfonoMMSManagerInterface(ServiceInterface):
 
         while retries < max_retries:
             try:
-                # Cancel any ongoing activation task
-                if self.activation_task and not self.activation_task.done():
-                    mmsd_print("Cancelling ongoing activation task", self.verbose)
-                    self.activation_task.cancel()
-                    try:
-                        await self.activation_task
-                    except asyncio.CancelledError:
-                        pass
-
-                self.context_property_setting = True
                 contexts = await self.ofono_interfaces['org.ofono.ConnectionManager'].call_get_contexts()
                 mms_ctx = None
 
@@ -138,14 +127,12 @@ class OfonoMMSManagerInterface(ServiceInterface):
                 ctx_path = mms_ctx[0]
                 ctx_interface = self.ofono_client["ofono_context"][ctx_path]['org.ofono.ConnectionContext']
 
+                async def apply():
+                    for prop, value in properties.items():
+                        await ctx_interface.call_set_property(prop, Variant('s', value))
+
                 mmsd_print("Deactivating MMS context before setting properties", self.verbose)
-                await ctx_interface.call_set_property("Active", Variant('b', False))
-
-                for prop, value in properties.items():
-                    await ctx_interface.call_set_property(prop, Variant('s', value))
-
-                # Success - start reactivation and return
-                self.activation_task = self.loop.create_task(self.force_activate_context())
+                await self.mms_context.reconfigure(apply)
                 return
             except Exception as e:
                 if "Operation already in progress" in str(e):
@@ -154,9 +141,6 @@ class OfonoMMSManagerInterface(ServiceInterface):
                     await asyncio.sleep(1)
                 else:
                     raise
-
-            finally:
-                self.context_property_setting = False
 
         mmsd_print("Properties setting completed", self.verbose)
 
@@ -347,6 +331,7 @@ class OfonoMMSManagerInterface(ServiceInterface):
                 self.ofono_mms_modemmanager_interface,
                 self.export_mms_message,
                 self.update_mms_message,
+                self.mms_context,
                 path,
                 self.verbose
             )
@@ -382,6 +367,7 @@ class OfonoMMSManagerInterface(ServiceInterface):
                 self.mms_dir,
                 self.export_mms_message,
                 self.update_mms_message,
+                self.mms_context,
                 path,
                 self.verbose
             )
@@ -414,8 +400,10 @@ class OfonoMMSManagerInterface(ServiceInterface):
                 if name.lower() == "mms":
                     ctx_path = ctx[0]
                     ctx_interface = self.ofono_client["ofono_context"][ctx_path]['org.ofono.ConnectionContext']
-                    self.activation_task = self.loop.create_task(self.force_activate_context())
                     ctx_interface.on_property_changed(self.context_active_changed)
+
+                    settings = ctx[1].get('Settings', Variant('a{sv}', {})).value
+                    self.mms_context.adopt(settings)
         except Exception as e:
             mmsd_print(f"Failed to set up MMS context monitoring: {e}", self.verbose)
 
@@ -500,32 +488,9 @@ class OfonoMMSManagerInterface(ServiceInterface):
 
         self.ofono_mms_service_interface.MessageRemoved(object_path)
 
-    async def force_activate_context(self):
-        while True:
-            try:
-                if hasattr(self, 'context_property_setting') and self.context_property_setting:
-                    mmsd_print("Property setting in progress, stopping activation", self.verbose)
-                    return
-
-                ret = await self.activate_mms_context()
-                if ret == True:
-                    return
-            except asyncio.CancelledError:
-                mmsd_print("Force activate context task cancelled", self.verbose)
-                raise
-            except Exception as e:
-                mmsd_print(f"Failed to activate context: {e}", self.verbose)
-
-            await asyncio.sleep(2)
-
     async def context_active_changed(self, prop, propvalue):
         mmsd_print(f"property: {prop}, value: {propvalue}", self.verbose)
-        if prop == "Active" and not self.context_property_setting:
-            if propvalue.value == False:
-                mmsd_print("oFono MMS connection dropped while we still need it, reactivating context", self.verbose)
-                if self.activation_task and not self.activation_task.done():
-                    self.activation_task.cancel()
-                self.activation_task = self.loop.create_task(self.force_activate_context())
+        self.mms_context.context_changed(prop, propvalue)
 
     async def activate_mms_context(self):
         ofono_internet_ctx_interface = None
@@ -567,6 +532,19 @@ class OfonoMMSManagerInterface(ServiceInterface):
         except Exception as e:
             mmsd_print(f"Failed to activate MMS context: {e}", self.verbose)
             return False
+
+    async def deactivate_mms_context(self):
+        try:
+            contexts = await self.ofono_interfaces['org.ofono.ConnectionManager'].call_get_contexts()
+            for ctx in contexts:
+                if ctx[1].get('Type', Variant('s', '')).value.lower() != "mms":
+                    continue
+
+                ctx_interface = self.ofono_client["ofono_context"][ctx[0]]["org.ofono.ConnectionContext"]
+                await ctx_interface.call_set_property("Active", Variant('b', False))
+                return
+        except Exception as e:
+            mmsd_print(f"Failed to deactivate MMS context: {e}", self.verbose)
 
     def ofono_modem_removed(self, path):
         mmsd_print(f"oFono modem removed at path {path}", self.verbose)
