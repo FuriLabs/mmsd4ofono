@@ -16,6 +16,10 @@ from dbus_fast import Variant
 
 from mmsd.logging import mmsd_print
 
+# retrying a download forever leaves the message invisible for as long as
+# the fault lasts, which is how a failed fetch used to go unreported
+DOWNLOAD_ATTEMPTS = 5
+
 from mmsd.route_controller import cleanup_mms_routes, setup_mms_routes
 from mmsd.utils import resolve_host
 from mmsdecoder.message import MMSMessage
@@ -43,18 +47,74 @@ class OfonoPushNotification(ServiceInterface):
         self.agent_path = False
         self.registered = False
         self.retry_queue = asyncio.Queue()
+        self.announced = set()
         asyncio.create_task(self.retry_failed_requests())
 
     async def retry_failed_requests(self):
         while True:
-            transaction_id, content_location, sender, info = await self.retry_queue.get()
+            transaction_id, content_location, sender, info, uuid, attempts = await self.retry_queue.get()
             proxy = await self.get_mms_context_info()
             response_content = await self.fetch_mms_content(content_location, proxy)
             if response_content:
-                self.process_mms_content(response_content, transaction_id, sender, info)
+                self.process_mms_content(response_content, transaction_id, sender, info, uuid)
+            elif attempts + 1 < DOWNLOAD_ATTEMPTS:
+                self.retry_queue.put_nowait(
+                    (transaction_id, content_location, sender, info, uuid, attempts + 1))
             else:
-                self.retry_queue.put_nowait((transaction_id, content_location, sender, info))
+                mmsd_print(f"Giving up on downloading message {uuid} after "
+                           f"{DOWNLOAD_ATTEMPTS} attempts", self.verbose)
+                self.settle_incoming(uuid, 'download_failed')
             await asyncio.sleep(5)
+
+    def announce_incoming(self, uuid, sender_number, sent_time):
+        """The body is not here yet but the message is. A thread that stays
+        empty until the fetch finishes tells the user nothing, and a fetch that
+        never finishes used to tell them nothing at all."""
+        status_path = join(self.mms_dir, f"{uuid}.status")
+        try:
+            with open(status_path, 'w', encoding='utf-8') as status_file:
+                status_file.write(f"[info]\nread=false\nstate=downloading\nid=\ndate={sent_time}\n")
+        except OSError as e:
+            mmsd_print(f"Could not write the status file for {uuid}: {e}", self.verbose)
+            return
+
+        self.announced.add(uuid)
+        self.export_mms_message(uuid, 'downloading', sent_time, sender_number, False, [], "", [])
+
+    def publish_received(self, uuid, sent_time, sender_number, delivery_report,
+                         recipients, smil_data, attachments):
+        """An announced message is already exported on its object path, so a
+        second export would publish a duplicate thread for the same MMS."""
+        if uuid in self.announced:
+            self.announced.discard(uuid)
+            self.update_mms_message(uuid, {
+                'Sender': Variant('s', sender_number),
+                'Date': Variant('s', sent_time),
+                'Delivery Report': Variant('b', bool(delivery_report)),
+                'Recipients': Variant('as', recipients),
+                'Smil': Variant('s', smil_data),
+                'Attachments': Variant('a(ssstt)', attachments),
+                'Status': Variant('s', 'received'),
+            })
+            return
+
+        self.export_mms_message(uuid, 'received', sent_time, sender_number,
+                                delivery_report, recipients, smil_data, attachments)
+
+    def settle_incoming(self, uuid, state):
+        self.announced.discard(uuid)
+        status_path = join(self.mms_dir, f"{uuid}.status")
+        try:
+            if exists(status_path):
+                with open(status_path, 'r', encoding='utf-8') as status_file:
+                    lines = status_file.readlines()
+                with open(status_path, 'w', encoding='utf-8') as status_file:
+                    for line in lines:
+                        status_file.write(f"state={state}\n" if line.startswith('state=') else line)
+        except OSError as e:
+            mmsd_print(f"Could not update the status file for {uuid}: {e}", self.verbose)
+
+        self.update_mms_message(uuid, {'Status': Variant('s', state)})
 
     def read_status_file(self, status_path):
         status_data = {}
@@ -239,13 +299,17 @@ class OfonoPushNotification(ServiceInterface):
             mmsd_print("Content location is None, is this even MMS? skipping", self.verbose)
             return
 
+        uuid = str(uuid4()).replace('-', '1')
+        sent_time = info['SentTime'].value if 'SentTime' in info else ''
+        self.announce_incoming(uuid, sub(r'[^0-9+]', '', sender) if sender else '', sent_time)
+
         proxy = await self.get_mms_context_info()
         response_content = await self.fetch_mms_content(content_location, proxy)
         if response_content:
-            self.process_mms_content(response_content, transaction_id, sender, info)
+            self.process_mms_content(response_content, transaction_id, sender, info, uuid)
         else:
             mmsd_print("Failed to get response content, adding to retry queue", self.verbose)
-            self.retry_queue.put_nowait((transaction_id, content_location, sender, info))
+            self.retry_queue.put_nowait((transaction_id, content_location, sender, info, uuid, 0))
 
     @method()
     def Release(self):
@@ -417,8 +481,8 @@ class OfonoPushNotification(ServiceInterface):
         finally:
             await cleanup_mms_routes()
 
-    def process_mms_content(self, content, transaction_id, sender, info):
-        uuid = str(uuid4()).replace('-', '1')
+    def process_mms_content(self, content, transaction_id, sender, info, uuid=None):
+        uuid = uuid or str(uuid4()).replace('-', '1')
         smil_path = join(self.mms_dir, uuid)
         status_path = join(self.mms_dir, f"{uuid}.status")
         headers_path = join(self.mms_dir, f"{uuid}.headers")
@@ -480,10 +544,8 @@ date={sent_time}"""
         else:
             delivery_report = mms_smil.headers.get('Delivery-Report')
 
-        if smil_data:
-            self.export_mms_message(uuid, 'received', sent_time, sender_number, delivery_report, recipients, smil_data, attachments)
-        else:
-            self.export_mms_message(uuid, 'received', sent_time, sender_number, delivery_report, recipients, "", attachments)
+        self.publish_received(uuid, sent_time, sender_number, delivery_report, recipients,
+                              smil_data or "", attachments)
 
     async def get_mms_context_info(self):
         proxy = ''
