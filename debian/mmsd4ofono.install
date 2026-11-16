@@ -3,6 +3,7 @@ usr/lib/mmsd/dbus.xml
 usr/lib/mmsd/main.py
 usr/lib/mmsd/mmsd/__init__.py
 usr/lib/mmsd/mmsd/logging.py
+usr/lib/mmsd/mmsd/mms_context.py
 usr/lib/mmsd/mmsd/ofono.py
 usr/lib/mmsd/mmsd/ofono_mms_message.py
 usr/lib/mmsd/mmsd/ofono_mms_modemmanager.py
